@@ -1,2 +1,144 @@
 <!--pages/MainInterface/MainInterface.wxml-->
-<text>pages/MainInterface/MainInterface.wxml</text>
+<view class="chat-container">
+  <!-- 无头部导航栏设计 - 直接显示消息列表 -->
+
+  <!-- 消息列表 -->
+  <scroll-view class="message-list" scroll-y="true" scroll-into-view="{{toView}}" scroll-with-animation="true" enable-back-to-top="true" scroll-left="0">
+    <block wx:for="{{messages}}" wx:key="id">
+      <block wx:if="{{!item.isMe}}">
+        <!-- 对方消息容器（左侧） -->
+        <view class="message-container message-container-left" id="msg-{{index}}">
+          <image class="avatar avatar-left" src="{{item.avatar}}" mode="aspectFill" binderror="onMessageAvatarError" data-avatar-type="target"></image>
+          <view class="message-content message-content-left">
+            <text wx:if="{{item.senderName}}" class="sender-name">{{item.senderName}}</text>
+            <view wx:if="{{item.type === 'text'}}" class="message-bubble message-bubble-left">
+              <text class="message-text">{{item.content}}</text>
+            </view>
+            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-left" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}">
+              <image class="voice-icon" src="/pages/images/214声波、语音消息.png" mode="aspectFit"></image>
+              <text class="voice-duration">{{item.duration}}"</text>
+              <view class="voice-wave">
+                <view class="wave-bar"></view>
+                <view class="wave-bar"></view>
+                <view class="wave-bar"></view>
+              </view>
+            </view>
+            <view wx:if="{{item.type === 'image'}}" class="image-bubble image-bubble-left" bindtap="previewImage" data-src="{{item.imageUrl}}">
+              <image class="message-image" src="{{item.imageUrl}}" mode="aspectFill" lazy-load="true"></image>
+            </view>
+          </view>
+        </view>
+      </block>
+      <block wx:else>
+        <!-- 我方消息容器（右侧） -->
+        <view class="message-container message-container-right" id="msg-{{index}}">
+          <view class="message-content message-content-right">
+            <view wx:if="{{item.type === 'text'}}" class="message-bubble message-bubble-right">
+              <text class="message-text">{{item.content}}</text>
+            </view>
+            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-right" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}">
+              <image class="voice-icon" src="/pages/images/214声波、语音消息.png" mode="aspectFit"></image>
+              <text class="voice-duration">{{item.duration}}"</text>
+              <view class="voice-wave">
+                <view class="wave-bar"></view>
+                <view class="wave-bar"></view>
+                <view class="wave-bar"></view>
+              </view>
+            </view>
+            <view wx:if="{{item.type === 'image'}}" class="image-bubble image-bubble-right" bindtap="previewImage" data-src="{{item.imageUrl}}">
+              <image class="message-image" src="{{item.imageUrl}}" mode="aspectFill" lazy-load="true"></image>
+            </view>
+          </view>
+          <image class="avatar avatar-right" src="{{item.avatar}}" mode="aspectFill" binderror="onMessageAvatarError" data-avatar-type="current"></image>
+        </view>
+      </block>
+    </block>
+  </scroll-view>
+  
+  <!-- 底部输入区域 -->
+  <view class="bottom-area">
+    <!-- 语音录制区域 -->
+    <view wx:if="{{isRecording}}" class="recording-overlay">
+      <view class="recording-panel">
+        <view class="recording-circle {{recordingStatus === 'cancel' ? 'recording-cancel' : ''}}">
+          <text class="recording-text">{{recordingText}}</text>
+          <text class="recording-time">{{recordingTime}}s</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 微信风格输入工具栏 -->
+    <view class="input-toolbar">
+      <!-- 左侧工具：语音/键盘切换 -->
+      <view class="toolbar-left">
+        <view class="voice-button {{inputMode === 'voice' ? 'active' : ''}}" bindtap="toggleInputMode">
+          <image class="toolbar-icon" src="/pages/images/{{inputMode === 'voice' ? '语音撤回' : '语音'}}.png" mode="aspectFit"></image>
+        </view>
+      </view>
+      
+      <!-- 中间输入区域 -->
+      <view class="input-center-area">
+        <!-- 文本输入模式 -->
+        <view wx:if="{{inputMode === 'text'}}" class="text-input-wrapper">
+          <!-- 更多功能按钮（微信风格） -->
+          <view class="more-functions-button" bindtap="showMoreMenu">
+            <image class="toolbar-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
+          </view>
+          
+          <!-- 输入框 -->
+          <view class="input-container">
+            <textarea class="message-textarea" placeholder="输入消息..." value="{{inputValue}}" bindinput="onInputChange" auto-height="true" maxlength="500" confirm-type="send" bindconfirm="sendMessage"></textarea>
+          </view>
+          
+          <!-- 表情按钮 -->
+          <view class="emoji-button" bindtap="showEmojiPicker">
+            <image class="toolbar-icon" src="/pages/images/个人详情.png" mode="aspectFit"></image>
+          </view>
+        </view>
+        
+        <!-- 语音录制模式 -->
+        <view wx:if="{{inputMode === 'voice'}}" class="voice-input-wrapper">
+          <view class="voice-record-button" bindtouchstart="startRecording" bindtouchend="stopRecording" bindtouchmove="onRecordingMove">
+            <text class="record-button-text">{{recordingStatus === 'recording' ? '松开发送' : '按住说话'}}</text>
+          </view>
+        </view>
+      </view>
+      
+      <!-- 右侧发送按钮 -->
+      <view class="toolbar-right">
+        <button wx:if="{{inputValue.trim()}}" class="send-button" bindtap="sendMessage">发送</button>
+        <button wx:else class="send-button disabled" disabled="true">发送</button>
+      </view>
+    </view>
+    
+    <!-- 更多功能菜单 -->
+    <view wx:if="{{showMoreMenu}}" class="more-menu">
+      <view class="menu-grid">
+        <view class="menu-item" bindtap="chooseImage">
+          <image class="menu-icon" src="/pages/images/视频.png" mode="aspectFit"></image>
+          <text class="menu-text">图片</text>
+        </view>
+        <view class="menu-item" bindtap="chooseVideo">
+          <image class="menu-icon" src="/pages/images/视频.png" mode="aspectFit"></image>
+          <text class="menu-text">视频</text>
+        </view>
+        <view class="menu-item" bindtap="startVoiceCall">
+          <image class="menu-icon" src="/pages/images/语音.png" mode="aspectFit"></image>
+          <text class="menu-text">语音通话</text>
+        </view>
+        <view class="menu-item" bindtap="startVideoCall">
+          <image class="menu-icon" src="/pages/images/视频.png" mode="aspectFit"></image>
+          <text class="menu-text">视频通话</text>
+        </view>
+        <view class="menu-item" bindtap="chooseFile">
+          <image class="menu-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
+          <text class="menu-text">文件</text>
+        </view>
+        <view class="menu-item" bindtap="shareLocation">
+          <image class="menu-icon" src="/pages/images/个人详情.png" mode="aspectFit"></image>
+          <text class="menu-text">位置</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

@@ -111,17 +111,57 @@ Page({
     
     // 延迟跳转，让用户看到提示
     setTimeout(() => {
-      // 使用 redirectTo 替代 navigateTo，避免用户返回到登录页
-      wx.switchTab({
-        url: '/pages/myPersonalDetails/myPersonalDetails',
+      // 跳转到聊天页面，携带用户头像和昵称
+      const userAvatar = this.data.userInfo.avatarUrl
+      const userName = this.data.userInfo.nickName
+      
+      console.log('准备跳转，用户数据:', {
+        userAvatar: userAvatar,
+        userName: userName,
+        userInfo: this.data.userInfo
+      })
+      
+      if (!userAvatar || !userName) {
+        console.error('用户数据不完整，无法跳转');
+        wx.showToast({
+          title: '请先完善个人信息',
+          icon: 'error'
+        })
+        return;
+      }
+      
+      // 将用户数据存储到全局，作为备用
+      const app = getApp();
+      if (app) {
+        app.globalData = app.globalData || {};
+        app.globalData.userInfo = {
+          avatarUrl: userAvatar,
+          nickName: userName
+        };
+      }
+      
+      const jumpUrl = `/pages/MainInterface/MainInterface?userAvatar=${encodeURIComponent(userAvatar)}&userName=${encodeURIComponent(userName)}`;
+      console.log('跳转URL:', jumpUrl);
+      
+      wx.navigateTo({
+        url: jumpUrl,
         success: () => {
-          console.log('成功跳转到心情记事本页面')
+          console.log('成功跳转到聊天页面')
         },
         fail: (error) => {
           console.error('跳转失败:', error)
-          wx.showToast({
-            title: '跳转失败',
-            icon: 'error'
+          // 如果跳转失败，尝试跳转到个人详情页
+          wx.switchTab({
+            url: '/pages/myPersonalDetails/myPersonalDetails',
+            success: () => {
+              console.log('成功跳转到个人详情页面')
+            },
+            fail: (error) => {
+              wx.showToast({
+                title: '跳转失败',
+                icon: 'error'
+              })
+            }
           })
         }
       })
@@ -233,14 +273,30 @@ Page({
     })
   },
   onChooseAvatar(e) {
+    console.log('onChooseAvatar 被调用:', e.detail);
     const { avatarUrl } = e.detail
     const { nickName } = this.data.userInfo
     const hasUserInfo = nickName && avatarUrl && avatarUrl !== defaultAvatarUrl
+    
+    console.log('头像选择结果:', {
+      avatarUrl: avatarUrl,
+      nickName: nickName,
+      hasUserInfo: hasUserInfo,
+      defaultAvatarUrl: defaultAvatarUrl
+    });
     
     this.setData({
       "userInfo.avatarUrl": avatarUrl,
       hasUserInfo: hasUserInfo,
     })
+    
+    // 保存用户数据到本地存储
+    try {
+      wx.setStorageSync('userInfo', JSON.stringify(this.data.userInfo));
+      console.log('用户头像已保存到本地存储');
+    } catch (e) {
+      console.log('保存用户数据失败:', e);
+    }
     
     // 如果用户信息完整且已登录，延迟自动跳转到mainMood页面
     if (hasUserInfo && this.data.isLoggedIn) {
@@ -255,14 +311,29 @@ Page({
     }
   },
   onInputChange(e) {
+    console.log('onInputChange 被调用:', e.detail);
     const nickName = e.detail.value
     const { avatarUrl } = this.data.userInfo
     const hasUserInfo = nickName && avatarUrl && avatarUrl !== defaultAvatarUrl
+    
+    console.log('昵称输入结果:', {
+      nickName: nickName,
+      avatarUrl: avatarUrl,
+      hasUserInfo: hasUserInfo
+    });
     
     this.setData({
       "userInfo.nickName": nickName,
       hasUserInfo: hasUserInfo,
     })
+    
+    // 保存用户数据到本地存储
+    try {
+      wx.setStorageSync('userInfo', JSON.stringify(this.data.userInfo));
+      console.log('用户昵称已保存到本地存储');
+    } catch (e) {
+      console.log('保存用户数据失败:', e);
+    }
     
     // 如果用户信息完整且已登录，延迟自动跳转到mainMood页面
     if (hasUserInfo && this.data.isLoggedIn) {

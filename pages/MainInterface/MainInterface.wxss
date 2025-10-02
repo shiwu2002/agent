@@ -1,1 +1,533 @@
 /* pages/MainInterface/MainInterface.wxss */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #ededed;
+}
+
+/* 无头部导航栏设计 - 消息列表直接开始 */
+
+/* 消息列表 - 无导航栏设计 */
+.message-list {
+  flex: 1;
+  padding: 20rpx 0; /* 减少顶部padding，适配无导航栏 */
+  background-color: #f5f5f5; /* 更现代的背景色 */
+  margin-bottom: 0; /* 确保不会被底部区域遮挡 */
+}
+
+/* 消息容器 - 双容器布局 */
+.message-container {
+  width: 100%;
+  margin-bottom: 32rpx; /* 微信风格：减少间距 */
+  box-sizing: border-box;
+}
+
+/* 对方消息容器（左侧） - 微信风格 */
+.message-container-left {
+  padding-left: 30rpx;   /* 左边距，给头像空间 */
+  padding-right: 100rpx; /* 右边距，防止消息过长 */
+  display: flex;
+  justify-content: flex-start; /* 左对齐 */
+}
+
+/* 我方消息容器（右侧） - 微信风格 */
+.message-container-right {
+  padding-left: 100rpx;  /* 左边距，防止消息过长 */
+  padding-right: 30rpx;  /* 右边距，给头像空间 */
+  display: flex;
+  justify-content: flex-end; /* 右对齐 */
+}
+
+/* 消息包装器 - 微信对称风格 */
+.message-wrapper {
+  display: flex;
+  align-items: flex-start;
+  max-width: 85%; /* 微信风格：消息最大宽度约85% */
+}
+
+.message-wrapper-left {
+  justify-content: flex-start;
+  margin-right: auto; /* 确保靠左 */
+}
+
+.message-wrapper-right {
+  justify-content: flex-end;
+  margin-left: auto; /* 确保靠右 */
+}
+
+/* 头像 - 微信对称风格 */
+.avatar {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.1);
+  border: 2rpx solid #ffffff;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.avatar-left {
+  margin-right: 24rpx; /* 微信风格的间距 */
+}
+
+.avatar-right {
+  margin-left: 24rpx; /* 微信风格的间距 */
+}
+
+/* 消息内容 - 微信对称风格 */
+.message-content {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  max-width: calc(100% - 104rpx); /* 微信风格：头像80rpx + 间距24rpx */
+}
+
+.message-content-left {
+  align-items: flex-start;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.message-content-right {
+  align-items: flex-end;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+/* 微信风格的时间戳位置（可选） */
+.message-container {
+  position: relative;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  max-width: 70%;
+}
+
+/* 发送者名字 */
+.sender-name {
+  font-size: 24rpx;
+  color: #666666;
+  margin-bottom: 8rpx;
+  margin-left: 8rpx;
+  margin-top: -8rpx; /* 向上微调更多，与头像顶部对齐 */
+}
+
+/* 文本消息 */
+.message-bubble {
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  position: relative;
+  word-wrap: break-word;
+  word-break: break-all;
+  max-width: 100%;
+  transition: all 0.2s ease;
+}
+
+.message-bubble:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+}
+
+/* 左侧消息气泡（对方） - 微信对称风格 */
+.message-bubble-left {
+  background-color: #ffffff;
+  border-top-left-radius: 6rpx;
+  margin-left: 0;      /* 自然贴边，无需负边距 */
+  margin-right: auto;
+}
+
+/* 右侧消息气泡（我方） - 微信对称风格 */
+.message-bubble-right {
+  background-color: #95ec69;
+  border-top-right-radius: 6rpx;
+  margin-left: auto;
+  margin-right: 0;     /* 自然贴边，无需负边距 */
+}
+
+.message-text {
+  font-size: 32rpx;
+  color: #333333;
+  line-height: 1.4;
+}
+
+/* 语音消息 - 微信对称风格 */
+.voice-bubble {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  min-width: 120rpx;
+  max-width: 400rpx;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-bubble-left {
+  background-color: #ffffff;
+  border-top-left-radius: 6rpx;
+  margin-left: 0;      /* 自然贴边 */
+}
+
+.voice-bubble-right {
+  background-color: #95ec69;
+  border-top-right-radius: 6rpx;
+  flex-direction: row-reverse;
+  margin-right: 0;     /* 自然贴边 */
+}
+
+.voice-bubble:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+}
+
+.voice-icon {
+  width: 40rpx;
+  height: 40rpx;
+  margin: 0 16rpx;
+}
+
+.voice-duration {
+  font-size: 28rpx;
+  color: #666666;
+  margin: 0 16rpx;
+  font-weight: 500;
+}
+
+.voice-wave {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  margin: 0 16rpx;
+}
+
+.wave-bar {
+  width: 4rpx;
+  height: 20rpx;
+  background-color: #07c160;
+  border-radius: 2rpx;
+  animation: wave 1s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.wave-bar:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes wave {
+  0%, 100% { height: 20rpx; }
+  50% { height: 32rpx; }
+}
+
+/* 图片消息 - 微信对称风格 */
+.image-bubble {
+  padding: 6rpx;
+  border-radius: 20rpx;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.image-bubble-left {
+  background-color: #ffffff;
+  border-top-left-radius: 6rpx;
+  margin-left: 0;      /* 自然贴边 */
+}
+
+.image-bubble-right {
+  background-color: #95ec69;
+  border-top-right-radius: 6rpx;
+  margin-right: 0;     /* 自然贴边 */
+}
+
+.message-image {
+  width: 240rpx;
+  height: 320rpx;
+  border-radius: 16rpx;
+}
+
+/* 底部输入区域 - 微信风格设计 */
+.bottom-area {
+  background-color: #ffffff;
+  border-top: 1rpx solid #e0e0e0;
+  padding-bottom: env(safe-area-inset-bottom); /* 适配全面屏 */
+}
+
+/* 微信风格输入工具栏 */
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  gap: 16rpx;
+  background-color: #f7f7f7;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+}
+
+/* 微信风格：中间输入区域 */
+.input-center-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* 文本输入模式 */
+.text-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  border-radius: 40rpx;
+  border: 1rpx solid #e0e0e0;
+  padding: 4rpx 12rpx;
+}
+
+/* 更多功能按钮（微信风格：放在输入框左侧） */
+.more-functions-button {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12rpx;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.more-functions-button:active {
+  background-color: #f0f0f0;
+}
+
+/* 输入框容器 */
+.input-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.message-textarea {
+  flex: 1;
+  min-height: 72rpx;
+  max-height: 180rpx;
+  padding: 16rpx 12rpx;
+  border: none;
+  border-radius: 24rpx;
+  font-size: 32rpx;
+  background-color: transparent;
+  line-height: 1.4;
+  resize: none;
+}
+
+.message-textarea:focus {
+  outline: none;
+}
+
+/* 表情按钮（微信风格：放在输入框右侧） */
+.emoji-button {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 12rpx;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.emoji-button:active {
+  background-color: #f0f0f0;
+}
+
+/* 语音输入模式 */
+.voice-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-record-button {
+  width: 100%;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  border-radius: 36rpx;
+  border: 1rpx solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.voice-record-button:active {
+  background-color: #f0f0f0;
+}
+
+.record-button-text {
+  font-size: 30rpx;
+  color: #666666;
+}
+
+/* 语音切换按钮 */
+.voice-button {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #ffffff;
+  border: 1rpx solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.voice-button:active {
+  background-color: #f0f0f0;
+}
+
+.voice-button.active {
+  background-color: #07c160;
+  border-color: #07c160;
+}
+
+.voice-button.active .toolbar-icon {
+  filter: brightness(0) invert(1);
+}
+
+.toolbar-icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+/* 发送按钮 */
+.send-button {
+  width: 80rpx;
+  height: 56rpx;
+  background-color: #07c160;
+  color: #ffffff;
+  border-radius: 28rpx;
+  font-size: 26rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.send-button:active {
+  background-color: #06a050;
+  transform: scale(0.95);
+}
+
+.send-button.disabled {
+  background-color: #cccccc;
+  color: #ffffff;
+}
+
+/* 语音录制覆盖层 */
+.recording-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.recording-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.recording-circle {
+  width: 300rpx;
+  height: 300rpx;
+  border-radius: 50%;
+  background-color: #07c160;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.recording-circle.recording-cancel {
+  background-color: #fa5151;
+  transform: scale(1.1);
+}
+
+.recording-text {
+  font-size: 32rpx;
+  color: #ffffff;
+  margin-bottom: 20rpx;
+}
+
+.recording-time {
+  font-size: 48rpx;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* 更多功能菜单 - 微信风格 */
+.more-menu {
+  padding: 24rpx 20rpx;
+  background-color: #ffffff;
+  border-top: 1rpx solid #e0e0e0;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24rpx;
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20rpx 12rpx;
+  border-radius: 12rpx;
+  background-color: #f5f5f5;
+  transition: all 0.2s ease;
+}
+
+.menu-item:active {
+  background-color: #e0e0e0;
+  transform: scale(0.95);
+}
+
+.menu-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 10rpx;
+  filter: drop-shadow(0 1rpx 2rpx rgba(0,0,0,0.1));
+}
+
+.menu-item:active .menu-icon {
+  transform: scale(0.9);
+}
+
+.menu-text {
+  font-size: 20rpx;
+  color: #333333;
+  text-align: center;
+  line-height: 1.2;
+}

@@ -1,0 +1,66 @@
+<!--index.wxml-->
+<scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container">
+    <!-- 页面标题 -->
+    <view class="page-title">
+      <text class="title-text">恋</text>
+      <text class="subtitle-text">弥补一个虚拟又真实的遗憾</text>
+    </view>
+
+    <!-- 登录进度提示 -->
+    <view class="progress-info">
+      <view class="step {{isLoggedIn ? 'completed' : 'current'}}">
+        <view class="step-icon">{{isLoggedIn ? '✓' : '1'}}</view>
+        <text class="step-text">微信登录</text>
+      </view>
+      <view class="step-line"></view>
+      <view class="step {{hasUserInfo ? 'completed' : (isLoggedIn ? 'current' : 'pending')}}">
+        <view class="step-icon">{{hasUserInfo ? '✓' : '2'}}</view>
+        <text class="step-text">完善信息</text>
+      </view>
+    </view>
+
+    <view class="userinfo">
+      <block wx:if="{{canIUseNicknameComp && !hasUserInfo}}">
+        <button class="avatar-wrapper" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <image class="avatar" src="{{userInfo.avatarUrl}}"></image>
+          <view class="avatar-tips">点击选择头像</view>
+        </button>
+        <view class="nickname-wrapper">
+          <text class="nickname-label">昵称</text>
+          <input type="nickname" class="nickname-input" placeholder="请输入您的昵称" bind:change="onInputChange" />
+        </view>
+        
+        <!-- 填写提示 -->
+        <view class="fill-tips">
+          <text class="tips-text">请选择头像并填写昵称，完成后将自动进入应用</text>
+        </view>
+      </block>
+      <block wx:elif="{{!hasUserInfo}}">
+        <button wx:if="{{canIUseGetUserProfile}}" class="get-profile-btn" bindtap="getUserProfile"> 
+          获取头像昵称 
+        </button>
+        <view wx:else class="version-tips"> 
+          请使用2.10.4及以上版本基础库 
+        </view>
+      </block>
+      <block wx:else>
+        <view class="completed-info">
+          <image bindtap="bindViewTap" class="userinfo-avatar" src="{{userInfo.avatarUrl}}" mode="cover"></image>
+          <text class="userinfo-nickname">{{userInfo.nickName}}</text>
+          <view class="success-message">
+            <text class="success-text">✓ 信息完善成功</text>
+          </view>
+        </view>
+      </block>
+    </view>
+    
+    <!-- 登录状态显示 -->
+    <view class="login-status">
+      <view class="status-indicator {{isLoggedIn ? 'logged-in' : 'logged-out'}}"></view>
+      <text class="status-text {{isLoggedIn ? 'logged-in' : 'logged-out'}}">{{loginStatus}}</text>
+    </view>
+    
+
+  </view>
+</scroll-view>

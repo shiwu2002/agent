@@ -104,11 +104,6 @@
         </view>
       </view>
       
-      <!-- 右侧发送按钮 -->
-      <view class="toolbar-right">
-        <button wx:if="{{inputValue.trim()}}" class="send-button" bindtap="sendMessage">发送</button>
-        <button wx:else class="send-button disabled" disabled="true">发送</button>
-      </view>
     </view>
     
     <!-- 更多功能菜单 -->

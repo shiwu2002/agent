@@ -199,4 +199,21 @@ class AuthService {
 }
 
 const authService = new AuthService()
-module.exports = authService
+
+// 兼容微信小程序的模块导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = authService;
+} else if (typeof define === 'function' && define.amd) {
+  define(function() { return authService; });
+} else {
+  // 微信小程序环境
+  if (typeof authService !== 'undefined') {
+    // 全局导出，兼容小程序环境
+    if (typeof global !== 'undefined') {
+      global.authService = authService;
+    }
+    if (typeof window !== 'undefined') {
+      window.authService = authService;
+    }
+  }
+}

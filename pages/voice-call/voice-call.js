@@ -22,7 +22,12 @@ Page({
     isMuted: false,
     isSpeaker: false,
     showControls: true,
-    timer: null
+    timer: null,
+    audioContext: null,
+    innerAudioContext: null,
+    currentAudioSource: null,
+    isPlayingTTS: false,
+    lastHeartbeatTime: 0
   },
 
   /**
@@ -164,55 +169,99 @@ Page({
   startAudioRecording() {
     const app = getApp();
     
-    // 获取麦克风权限
-    wx.getRecorderManager().start({
+    // 获取录音管理器
+    const recorderManager = wx.getRecorderManager();
+    
+    // 设置录音参数 - 使用PCM格式，16kHz采样率
+    const recordingOptions = {
       duration: 60000, // 最长60秒
       sampleRate: 16000, // 16kHz采样率，符合后端要求
       numberOfChannels: 1, // 单声道
-      encodeBitRate: 128000, // 编码码率
+      encodeBitRate: 64000, // 编码码率，设置为64000（在24000-96000范围内）
       format: 'pcm', // PCM格式
-      frameSize: 10 // 每帧10ms
-    });
+      frameSize: 2 // 每帧2KB，约为125ms的音频数据
+    };
     
-    console.log('开始PCM音频录制');
-    
-    // 监听录音数据
-    const recorderManager = wx.getRecorderManager();
-    
+    // 监听录音帧数据事件
     recorderManager.onFrameRecorded((res) => {
       const { frameBuffer } = res;
       
-      // 发送PCM音频数据到服务器
-      if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-        // 发送二进制PCM数据
-        app.globalData.voiceWSManager.send(frameBuffer);
-        console.log('发送PCM音频数据帧，长度:', frameBuffer.byteLength);
+      // 验证音频数据有效性
+      if (frameBuffer && frameBuffer.byteLength > 0) {
+        // 检查是否为有效的PCM数据（至少包含一些非零数据）
+        const dataView = new DataView(frameBuffer);
+        let hasValidData = false;
+        
+        // 简单检查：查看前100个样本中是否有非零数据
+        const sampleCount = Math.min(100, frameBuffer.byteLength / 2);
+        for (let i = 0; i < sampleCount; i++) {
+          const sample = dataView.getInt16(i * 2, true);
+          if (sample !== 0) {
+            hasValidData = true;
+            break;
+          }
+        }
+        
+        if (hasValidData) {
+          // 发送PCM音频数据到服务器
+          this.safeSendMessage(frameBuffer);
+        } else {
+          console.warn('跳过无效音频帧：数据全为零');
+        }
       }
     });
     
+    // 监听录音开始事件
     recorderManager.onStart(() => {
       console.log('PCM音频录制开始');
+      this.setData({ recordingStatus: 'recording' });
     });
     
+    // 监听录音错误事件
     recorderManager.onError((error) => {
       console.error('PCM音频录制错误:', error);
+      this.setData({ recordingStatus: 'idle' });
       wx.showToast({
         title: '音频录制失败',
         icon: 'none'
       });
     });
+    
+    // 监听录音停止事件
+    recorderManager.onStop((res) => {
+      console.log('PCM音频录制停止:', res);
+      this.setData({ recordingStatus: 'idle' });
+    });
+    
+    // 开始录音
+    recorderManager.start(recordingOptions);
+    console.log('开始PCM音频录制，参数:', recordingOptions);
   },
 
   /**
-   * 停止音频录制
+   * 停止录制PCM音频数据
    */
   stopAudioRecording() {
-    try {
-      wx.getRecorderManager().stop();
-      console.log('PCM音频录制停止');
-    } catch (error) {
-      console.error('停止音频录制失败:', error);
+    console.log('停止录制PCM音频数据');
+    
+    // 停止录音
+    const recorderManager = wx.getRecorderManager();
+    recorderManager.stop();
+    
+    // 通知服务器用户停止说话，可以开始处理并生成AI回复
+    const app = getApp();
+    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+      const endMessage = {
+        type: 'user_speaking_end',
+        senderId: this.data.localUserInfo.id,
+        targetId: this.data.targetUserId,
+        timestamp: Date.now()
+      };
+      
+      this.safeSendMessage(endMessage);
     }
+    
+    this.setData({ recordingStatus: 'idle' });
   },
 
   /**
@@ -295,15 +344,14 @@ Page({
     const app = getApp();
     const userId = app.globalData.openId || 'user123';
     
-    const WebSocketManager = require('../../utils/websocket.js');
-    
+    // 使用页面内部定义的WebSocketManager，避免模块加载问题
     const voiceWSManager = new WebSocketManager({
       url: `ws://localhost:8080/ws/voice?userId=${userId}`,
       onOpen: () => {
         console.log('语音通话页面WebSocket连接成功');
         this.setupWebSocketListeners();
         // 发送认证信息
-        voiceWSManager.send({
+        this.safeSendMessage({
           type: 'auth',
           userId: this.data.localUserInfo.id,
           targetUserId: this.data.targetUserId,
@@ -330,11 +378,97 @@ Page({
   },
 
   /**
+   * 安全发送WebSocket消息（防止发送空对象或无效数据）
+   */
+  safeSendMessage(message) {
+    const app = getApp();
+    if (!app.globalData.voiceWSManager || !app.globalData.voiceWSManager.isConnected) {
+      console.error('WebSocket未连接，无法发送消息');
+      return false;
+    }
+    
+    try {
+      // 验证消息不为空
+      if (!message) {
+        console.warn('跳过发送空消息');
+        return false;
+      }
+      
+      // 验证消息类型
+      if (typeof message === 'object') {
+        if (!message.type) {
+          console.warn('跳过发送无类型的消息:', message);
+          return false;
+        }
+        
+        // 验证特定消息类型的必需字段
+        switch (message.type) {
+          case 'auth':
+            if (!message.userId || !message.targetUserId) {
+              console.warn('跳过发送无效的认证消息:', message);
+              return false;
+            }
+            break;
+          case 'voice_call_end':
+          case 'user_speaking_end':
+          case 'voice_mute_status':
+            if (!message.senderId || !message.targetUserId || !message.targetId) {
+              // 检查是否有targetId或targetUserId
+              if (!message.targetId && !message.targetUserId) {
+                console.warn('跳过发送无效的消息（缺少目标ID）:', message);
+                return false;
+              }
+            }
+            break;
+        }
+        
+        // 将对象转换为JSON字符串
+        const messageStr = JSON.stringify(message);
+        console.log('发送WebSocket消息:', messageStr);
+        return app.globalData.voiceWSManager.send(messageStr);
+      } else if (typeof message === 'string') {
+        // 字符串消息直接发送
+        console.log('发送WebSocket字符串消息:', message);
+        return app.globalData.voiceWSManager.send(message);
+      } else if (message instanceof ArrayBuffer) {
+        // 二进制数据直接发送（PCM音频数据）
+        console.log('发送WebSocket二进制消息，长度:', message.byteLength);
+        return app.globalData.voiceWSManager.send(message);
+      } else {
+        console.warn('跳过发送未知类型的消息:', message);
+        return false;
+      }
+    } catch (error) {
+      console.error('发送消息异常:', error);
+      return false;
+    }
+  },
+
+  /**
    * 处理语音消息
    */
   handleVoiceMessage(message) {
     try {
       if (typeof message.data === 'string') {
+        // 检查是否为心跳消息（纯文本格式）
+        if (message.data === 'ping' || message.data === 'pong' || 
+            message.data === 'AI: ping' || message.data === 'AI: pong') {
+          console.log('收到心跳消息（纯文本）:', message.data);
+          return;
+        }
+        
+        // 检查是否为TTS文本消息（用户说话后的AI回复）
+        if (message.data.startsWith('AI: ') && !message.data.startsWith('AI: ping') && !message.data.startsWith('AI: pong')) {
+          console.log('收到AI文本回复:', message.data);
+          // 显示AI正在回复的状态
+          wx.showToast({
+            title: 'AI思考中...',
+            icon: 'none',
+            duration: 2000
+          });
+          return;
+        }
+        
         // 检查是否为错误消息
         if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
             message.data.startsWith('处理失败:') || 
@@ -373,11 +507,12 @@ Page({
             console.log('收到心跳ping，发送pong响应');
             const app = getApp();
             if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-              app.globalData.voiceWSManager.send({
+              const pongMessage = {
                 type: 'pong',
                 timestamp: Date.now(),
                 originalTimestamp: data.timestamp
-              });
+              };
+              app.globalData.voiceWSManager.send(JSON.stringify(pongMessage));
             }
             break;
           case 'pong':
@@ -385,6 +520,16 @@ Page({
             const latency = Date.now() - data.originalTimestamp;
             console.log('收到心跳pong，延迟:', latency, 'ms');
             this.lastHeartbeatTime = Date.now();
+            break;
+          case 'tts_audio':
+            // TTS生成的语音数据
+            console.log('收到TTS语音数据');
+            this.handleTTSVoiceData(data);
+            break;
+          case 'ai_response':
+            // AI回复的语音数据（兼容格式）
+            console.log('收到AI回复语音数据');
+            this.handleTTSVoiceData(data);
             break;
           default:
             console.log('未知语音通话消息类型:', data.type);
@@ -409,6 +554,152 @@ Page({
   },
 
   /**
+   * 处理TTS语音数据
+   */
+  handleTTSVoiceData(data) {
+    try {
+      console.log('处理TTS语音数据:', data);
+      
+      // 停止当前正在播放的音频
+      if (this.data.isPlayingTTS) {
+        this.stopAudioPlayback();
+      }
+      
+      // 设置正在播放状态
+      this.setData({ isPlayingTTS: true });
+      
+      if (data.audioData) {
+        // 如果audioData是Base64格式的音频数据
+        const audioData = data.audioData;
+        console.log('收到Base64音频数据，长度:', audioData.length);
+        
+        // 将Base64转换为ArrayBuffer
+        const arrayBuffer = wx.base64ToArrayBuffer(audioData);
+        
+        // 直接播放音频
+        this.playPCMAudio(arrayBuffer);
+        
+      } else if (data.audioUrl) {
+        // 如果提供的是音频URL
+        console.log('收到音频URL:', data.audioUrl);
+        
+        // 下载音频文件然后播放
+        this.downloadAndPlayAudio(data.audioUrl);
+        
+      } else if (data.text) {
+        // 如果收到的是文本，可以在这里调用TTS（如果需要）
+        console.log('收到文本内容，需要TTS转换:', data.text);
+        
+        // 显示正在播放的提示
+        wx.showToast({
+          title: 'AI回复中...',
+          icon: 'none',
+          duration: 2000
+        });
+        
+        // 重置播放状态
+        this.setData({ isPlayingTTS: false });
+        
+      } else {
+        console.warn('TTS语音数据格式未知:', data);
+        // 重置播放状态
+        this.setData({ isPlayingTTS: false });
+      }
+      
+    } catch (error) {
+      console.error('处理TTS语音数据失败:', error);
+      wx.showToast({
+        title: '语音播放失败',
+        icon: 'none'
+      });
+      // 重置播放状态
+      this.setData({ isPlayingTTS: false });
+    }
+  },
+
+  /**
+   * 下载并播放音频
+   */
+  downloadAndPlayAudio(audioUrl) {
+    wx.downloadFile({
+      url: audioUrl,
+      success: (res) => {
+        if (res.statusCode === 200) {
+          console.log('音频下载成功:', res.tempFilePath);
+          
+          // 创建音频播放器
+          const audioPlayer = wx.createInnerAudioContext();
+          
+          audioPlayer.src = res.tempFilePath;
+          audioPlayer.obeyMuteSwitch = false;
+          
+          audioPlayer.onPlay(() => {
+            console.log('开始播放TTS音频');
+          });
+          
+          audioPlayer.onEnded(() => {
+          console.log('TTS音频播放结束');
+          audioPlayer.destroy();
+          // 重置播放状态
+          this.setData({ isPlayingTTS: false });
+        });
+        
+        audioPlayer.onError((err) => {
+          console.error('TTS音频播放失败:', err);
+          audioPlayer.destroy();
+          // 重置播放状态
+          this.setData({ isPlayingTTS: false });
+        });
+          
+          // 设置音量并播放
+          audioPlayer.volume = this.data.isSpeaker ? 1.0 : 0.8;
+          audioPlayer.play();
+          
+        } else {
+          console.error('音频下载失败，状态码:', res.statusCode);
+          wx.showToast({
+            title: '音频下载失败',
+            icon: 'none'
+          });
+        }
+      },
+      fail: (error) => {
+        console.error('音频下载失败:', error);
+        wx.showToast({
+          title: '音频下载失败',
+          icon: 'none'
+        });
+      }
+    });
+  },
+
+  /**
+   * 停止当前音频播放
+   */
+  stopAudioPlayback() {
+    try {
+      // 停止Web Audio播放
+      if (this.currentAudioSource) {
+        try {
+          this.currentAudioSource.stop();
+        } catch (e) {
+          // 忽略停止错误
+        }
+        this.currentAudioSource = null;
+      }
+      
+      // 停止InnerAudioContext播放
+      if (this.innerAudioContext) {
+        this.innerAudioContext.stop();
+      }
+      
+      console.log('音频播放已停止');
+    } catch (error) {
+      console.error('停止音频播放失败:', error);
+    }
+  },
+
+  /**
    * 处理通话连接成功
    */
   handleCallConnected() {
@@ -417,6 +708,123 @@ Page({
       title: '通话已连接',
       icon: 'none'
     });
+  },
+
+  /**
+   * 播放PCM音频数据
+   */
+  playPCMAudio(arrayBuffer) {
+    try {
+      console.log('开始播放PCM音频数据，长度:', arrayBuffer.byteLength);
+      
+      // 创建音频上下文
+      if (!this.audioContext) {
+        this.audioContext = wx.createWebAudioContext();
+      }
+      
+      const audioContext = this.audioContext;
+      
+      // 解码音频数据
+      audioContext.decodeAudioData(arrayBuffer.slice(0), (audioBuffer) => {
+        console.log('音频解码成功，时长:', audioBuffer.duration, '秒');
+        
+        // 创建音频源
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        
+        // 连接到输出
+        source.connect(audioContext.destination);
+        
+        // 设置音量
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = this.data.isSpeaker ? 1.0 : 0.8;
+        
+        // 重新连接：源 -> 音量 -> 输出
+        source.disconnect();
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 播放音频
+        source.start(0);
+        
+        // 监听播放结束
+        source.onended = () => {
+          console.log('PCM音频播放结束');
+          // 重置播放状态
+          this.setData({ isPlayingTTS: false });
+          // 清除当前播放源
+          this.currentAudioSource = null;
+        };
+        
+        // 保存当前播放源，便于后续控制
+        this.currentAudioSource = source;
+        
+      }, (error) => {
+        console.error('音频解码失败:', error);
+        // 如果解码失败，尝试使用InnerAudioContext播放
+        this.playAudioWithInnerAudioContext(arrayBuffer);
+      });
+      
+    } catch (error) {
+      console.error('播放PCM音频失败:', error);
+      // 如果Web Audio API失败，尝试使用InnerAudioContext
+      this.playAudioWithInnerAudioContext(arrayBuffer);
+    }
+  },
+
+  /**
+   * 使用InnerAudioContext播放音频（备用方案）
+   */
+  playAudioWithInnerAudioContext(arrayBuffer) {
+    try {
+      console.log('使用InnerAudioContext播放音频');
+      
+      // 将ArrayBuffer转换为Base64
+      const base64 = wx.arrayBufferToBase64(arrayBuffer);
+      
+      // 创建音频播放器
+      if (!this.innerAudioContext) {
+        this.innerAudioContext = wx.createInnerAudioContext();
+        
+        // 设置音频参数
+        this.innerAudioContext.obeyMuteSwitch = false; // 不跟随系统静音
+        this.innerAudioContext.autoplay = false;
+        
+        // 监听事件
+        this.innerAudioContext.onPlay(() => {
+          console.log('InnerAudioContext开始播放');
+        });
+        
+        this.innerAudioContext.onEnded(() => {
+          console.log('InnerAudioContext播放结束');
+          // 重置播放状态
+          this.setData({ isPlayingTTS: false });
+        });
+        
+        this.innerAudioContext.onError((err) => {
+          console.error('InnerAudioContext播放错误:', err);
+          // 重置播放状态
+          this.setData({ isPlayingTTS: false });
+        });
+      }
+      
+      // 设置音频源（需要转换为data URL）
+      const dataUrl = 'data:audio/wav;base64,' + base64;
+      this.innerAudioContext.src = dataUrl;
+      
+      // 设置音量
+      this.innerAudioContext.volume = this.data.isSpeaker ? 1.0 : 0.8;
+      
+      // 播放
+      this.innerAudioContext.play();
+      
+    } catch (error) {
+      console.error('InnerAudioContext播放音频失败:', error);
+      wx.showToast({
+        title: '音频播放失败',
+        icon: 'none'
+      });
+    }
   },
 
   /**
@@ -479,12 +887,14 @@ Page({
     // 发送静音状态到对方
     const app = getApp();
     if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-      app.globalData.voiceWSManager.send({
+      const muteMessage = {
         type: 'voice_mute_status',
         isMuted: isMuted,
-        userId: this.data.localUserInfo.id,
+        senderId: this.data.localUserInfo.id,
         targetUserId: this.data.targetUserId
-      });
+      };
+      
+      this.safeSendMessage(muteMessage);
     }
   },
 
@@ -534,18 +944,38 @@ Page({
     // 停止音频录制
     this.stopAudioRecording();
     
+    // 停止音频播放
+    this.stopAudioPlayback();
+    
     // 发送通话结束消息
     const app = getApp();
     if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-      app.globalData.voiceWSManager.send({
+      const endCallMessage = {
         type: 'voice_call_end',
         senderId: this.data.localUserInfo.id,
         targetUserId: this.data.targetUserId,
         timestamp: Date.now()
-      });
+      };
+      
+      this.safeSendMessage(endCallMessage);
     }
 
     this.stopCallTimer();
+    
+    // 清理音频上下文
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch (e) {
+        // 忽略关闭错误
+      }
+      this.audioContext = null;
+    }
+    
+    if (this.innerAudioContext) {
+      this.innerAudioContext.destroy();
+      this.innerAudioContext = null;
+    }
     
     // 返回上一页
     wx.navigateBack({
@@ -566,6 +996,22 @@ Page({
    */
   onUnload() {
     this.stopAudioRecording();
+    this.stopAudioPlayback();
+    
+    // 清理音频上下文
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch (e) {
+        // 忽略关闭错误
+      }
+      this.audioContext = null;
+    }
+    
+    if (this.innerAudioContext) {
+      this.innerAudioContext.destroy();
+      this.innerAudioContext = null;
+    }
   },
 
   /**
@@ -573,5 +1019,6 @@ Page({
    */
   onHide() {
     this.stopCallTimer();
+    this.stopAudioPlayback();
   }
 })

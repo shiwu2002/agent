@@ -1,6 +1,255 @@
 // pages/MainInterface/MainInterface.js
-const WebSocketManager = require('../../utils/websocket.js');
-const VoiceRecorder = require('../../utils/voice-recorder.js');
+// 直接在页面中定义WebSocketManager，避免模块加载问题
+
+// 简化的WebSocketManager实现
+class WebSocketManager {
+  constructor(options = {}) {
+    this.url = options.url || '';
+    this.onOpen = options.onOpen || function() {};
+    this.onMessage = options.onMessage || function() {};
+    this.onClose = options.onClose || function() {};
+    this.onError = options.onError || function() {};
+    this.reconnectInterval = options.reconnectInterval || 3000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts || 5;
+    
+    this.socket = null;
+    this.isConnected = false;
+    this.reconnectAttempts = 0;
+  }
+
+  connect() {
+    if (this.socket && this.isConnected) {
+      console.log('WebSocket已连接，无需重复连接');
+      return;
+    }
+
+    console.log('正在连接WebSocket:', this.url);
+    
+    try {
+      this.socket = wx.connectSocket({
+        url: this.url,
+        header: {
+          'content-type': 'application/json'
+        },
+        method: 'GET',
+        success: () => {
+          console.log('WebSocket连接请求已发送');
+        },
+        fail: (error) => {
+          console.error('WebSocket连接失败:', error);
+          this.handleConnectionError(error);
+        }
+      });
+
+      this.setupSocketEvents();
+    } catch (error) {
+      console.error('创建WebSocket连接异常:', error);
+      this.handleConnectionError(error);
+    }
+  }
+
+  setupSocketEvents() {
+    if (!this.socket) return;
+
+    // 连接成功
+    this.socket.onOpen(() => {
+      console.log('WebSocket连接已建立');
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      this.onOpen();
+    });
+
+    // 收到消息
+    this.socket.onMessage((message) => {
+      console.log('收到WebSocket消息:', message);
+      this.onMessage(message);
+    });
+
+    // 连接关闭
+    this.socket.onClose((res) => {
+      console.log('WebSocket连接已关闭:', res);
+      this.isConnected = false;
+      this.onClose(res);
+      
+      // 非正常关闭时尝试重连
+      if (res.code !== 1000) {
+        this.attemptReconnect();
+      }
+    });
+
+    // 连接错误
+    this.socket.onError((error) => {
+      console.error('WebSocket错误:', error);
+      this.isConnected = false;
+      this.onError(error);
+      this.attemptReconnect();
+    });
+  }
+
+  send(data) {
+    if (!this.isConnected || !this.socket) {
+      console.error('WebSocket未连接，无法发送消息');
+      return false;
+    }
+
+    try {
+      const message = typeof data === 'string' ? data : JSON.stringify(data);
+      console.log('发送WebSocket消息:', message);
+      
+      this.socket.send({
+        data: message,
+        success: () => {
+          console.log('消息发送成功');
+        },
+        fail: (error) => {
+          console.error('消息发送失败:', error);
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('发送消息异常:', error);
+      return false;
+    }
+  }
+
+  disconnect() {
+    console.log('正在断开WebSocket连接');
+    
+    if (this.socket && this.isConnected) {
+      this.socket.close({
+        code: 1000,
+        reason: '用户主动断开连接'
+      });
+    }
+    
+    this.socket = null;
+    this.isConnected = false;
+  }
+
+  attemptReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log('已达到最大重连次数，停止重连');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    console.log(`正在尝试第 ${this.reconnectAttempts} 次重连...`);
+
+    setTimeout(() => {
+      console.log('执行重连...');
+      this.connect();
+    }, this.reconnectInterval);
+  }
+
+  handleConnectionError(error) {
+    this.isConnected = false;
+    this.onError(error);
+    this.attemptReconnect();
+  }
+
+  isConnected() {
+    return this.isConnected;
+  }
+}
+
+// 简化的VoiceRecorder实现
+class VoiceRecorder {
+  constructor(options = {}) {
+    this.onStart = options.onStart || function() {};
+    this.onStop = options.onStop || function() {};
+    this.onError = options.onError || function() {};
+    this.maxDuration = options.maxDuration || 60000;
+    
+    this.recorderManager = null;
+    this.isRecording = false;
+    this.startTime = 0;
+    this.duration = 0;
+  }
+
+  init() {
+    if (this.recorderManager) return;
+
+    this.recorderManager = wx.getRecorderManager();
+    this.setupRecorderEvents();
+  }
+
+  setupRecorderEvents() {
+    if (!this.recorderManager) return;
+
+    this.recorderManager.onStart(() => {
+      console.log('录音开始');
+      this.isRecording = true;
+      this.startTime = Date.now();
+      this.duration = 0;
+      this.onStart();
+    });
+
+    this.recorderManager.onStop((res) => {
+      console.log('录音停止:', res);
+      this.isRecording = false;
+      
+      const result = {
+        tempFilePath: res.tempFilePath,
+        duration: Date.now() - this.startTime,
+        fileSize: res.fileSize
+      };
+      
+      this.onStop(result);
+    });
+
+    this.recorderManager.onError((error) => {
+      console.error('录音错误:', error);
+      this.isRecording = false;
+      this.onError(error);
+    });
+  }
+
+  start() {
+    if (this.isRecording) {
+      console.log('正在录音中，无需重复开始');
+      return;
+    }
+
+    this.init();
+
+    const options = {
+      duration: this.maxDuration,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      encodeBitRate: 64000,
+      format: 'pcm',
+      frameSize: 2
+    };
+
+    console.log('开始录音，参数:', options);
+    
+    this.recorderManager.start(options);
+  }
+
+  stop() {
+    if (!this.isRecording) {
+      console.log('没有在录音，无需停止');
+      return;
+    }
+
+    console.log('停止录音');
+    this.recorderManager.stop();
+  }
+
+  destroy() {
+    console.log('销毁录音器');
+    
+    if (this.isRecording) {
+      this.stop();
+    }
+    
+    this.recorderManager = null;
+    this.isRecording = false;
+    this.startTime = 0;
+    this.duration = 0;
+  }
+}
 
 Page({
 
@@ -243,6 +492,14 @@ Page({
       if (typeof message.data === 'string') {
         const messageText = message.data;
         
+        // 检查是否为心跳消息（ping/pong）
+        if (messageText === 'pong' || messageText === 'ping' || 
+            messageText.includes('"type":"pong"') || 
+            messageText.includes('"type":"ping"')) {
+          console.log('收到心跳消息:', messageText);
+          return;
+        }
+        
         // 检查是否为系统状态消息
         if (messageText.includes('已连接到') || messageText.includes('连接成功')) {
           console.log('系统连接状态消息:', messageText);
@@ -295,7 +552,19 @@ Page({
               console.log('未知消息类型:', data.type);
           }
         } catch (jsonError) {
-          // JSON解析失败，作为纯文本消息处理
+          // JSON解析失败，检查是否为心跳消息
+          if (messageText === 'pong' || messageText.includes('心跳') || messageText.includes('ping') || messageText.includes('pong')) {
+            console.log('收到心跳消息，不显示到页面:', messageText);
+            return;
+          }
+          
+          // 检查是否为系统连接状态消息
+          if (messageText.includes('已连接到') || messageText.includes('连接成功') || messageText.includes('已连接')) {
+            console.log('系统连接状态消息:', messageText);
+            return;
+          }
+          
+          // 其他纯文本消息才显示
           console.log('收到纯文本消息，作为系统消息显示:', messageText);
           this.receiveMessage({
             id: `msg_${Date.now()}`,
@@ -315,6 +584,14 @@ Page({
       console.error('解析消息失败:', error, '原始消息:', message.data);
       // 最后的兜底处理
       if (typeof message.data === 'string') {
+        // 检查是否为心跳消息，避免显示到页面
+        if (message.data === 'pong' || message.data === 'ping' || 
+            message.data.includes('心跳') || message.data.includes('ping') || 
+            message.data.includes('pong')) {
+          console.log('收到心跳消息（兜底处理），不显示到页面:', message.data);
+          return;
+        }
+        
         this.receiveMessage({
           id: `msg_${Date.now()}`,
           type: 'text',
@@ -569,14 +846,16 @@ Page({
     });
 
     // 通过WebSocket发送
-    this.safeSendMessage(this.data.wsManager, {
-      type: 'message',
-      messageType: 'text',
-      content: content,
-      senderId: this.data.currentUser.id,
-      targetId: this.data.targetUser.id,
-      timestamp: Date.now()
-    });
+    if (this.data.wsManager && this.data.wsManager.isConnected) {
+      this.data.wsManager.send({
+        type: 'message',
+        messageType: 'text',
+        content: content,
+        senderId: this.data.currentUser.id,
+        targetId: this.data.targetUser.id,
+        timestamp: Date.now()
+      });
+    }
   },
 
   /**

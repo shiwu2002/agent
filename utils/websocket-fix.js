@@ -1,7 +1,7 @@
-/**
- * WebSocket管理器
- * 提供WebSocket连接、重连、心跳检测等功能
- */
+// utils/websocket-fix.js
+// 修复WebSocket模块加载问题
+
+// 直接定义WebSocketManager类
 class WebSocketManager {
   constructor(options = {}) {
     this.url = options.url || '';
@@ -20,9 +20,6 @@ class WebSocketManager {
     this.heartbeatInterval = 30000; // 30秒心跳
   }
 
-  /**
-   * 连接WebSocket
-   */
   connect() {
     if (this.socket && this.isConnected) {
       console.log('WebSocket已连接，无需重复连接');
@@ -54,9 +51,6 @@ class WebSocketManager {
     }
   }
 
-  /**
-   * 设置WebSocket事件监听
-   */
   setupSocketEvents() {
     if (!this.socket) return;
 
@@ -120,9 +114,6 @@ class WebSocketManager {
     });
   }
 
-  /**
-   * 发送消息
-   */
   send(data) {
     if (!this.isConnected || !this.socket) {
       console.error('WebSocket未连接，无法发送消息');
@@ -164,11 +155,8 @@ class WebSocketManager {
       console.error('发送消息异常:', error);
       return false;
     }
-  },
+  }
 
-  /**
-   * 断开连接
-   */
   disconnect() {
     console.log('正在断开WebSocket连接');
     
@@ -186,9 +174,6 @@ class WebSocketManager {
     this.isConnected = false;
   }
 
-  /**
-   * 尝试重连
-   */
   attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log('已达到最大重连次数，停止重连');
@@ -206,9 +191,6 @@ class WebSocketManager {
     }, this.reconnectInterval);
   }
 
-  /**
-   * 停止重连
-   */
   stopReconnect() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -216,9 +198,6 @@ class WebSocketManager {
     }
   }
 
-  /**
-   * 开始心跳检测
-   */
   startHeartbeat() {
     this.stopHeartbeat();
     
@@ -232,9 +211,6 @@ class WebSocketManager {
     }, this.heartbeatInterval);
   }
 
-  /**
-   * 停止心跳检测
-   */
   stopHeartbeat() {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -242,18 +218,12 @@ class WebSocketManager {
     }
   }
 
-  /**
-   * 处理连接错误
-   */
   handleConnectionError(error) {
     this.isConnected = false;
     this.onError(error);
     this.attemptReconnect();
   }
 
-  /**
-   * 获取连接状态
-   */
   getConnectionState() {
     return {
       isConnected: this.isConnected,
@@ -262,16 +232,10 @@ class WebSocketManager {
     };
   }
 
-  /**
-   * 是否已连接
-   */
   isConnected() {
     return this.isConnected;
   }
 
-  /**
-   * 重新连接
-   */
   reconnect() {
     console.log('重新连接WebSocket');
     this.disconnect();
@@ -282,20 +246,5 @@ class WebSocketManager {
   }
 }
 
-// 兼容微信小程序的模块导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = WebSocketManager;
-} else if (typeof define === 'function' && define.amd) {
-  define(function() { return WebSocketManager; });
-} else {
-  // 微信小程序环境
-  if (typeof WebSocketManager !== 'undefined') {
-    // 全局导出，兼容小程序环境
-    if (typeof global !== 'undefined') {
-      global.WebSocketManager = WebSocketManager;
-    }
-    if (typeof window !== 'undefined') {
-      window.WebSocketManager = WebSocketManager;
-    }
-  }
-}
+// 直接导出类
+module.exports = WebSocketManager;

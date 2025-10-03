@@ -1,0 +1,76 @@
+<!-- 语音通讯测试页面 -->
+<view class="test-voice-container">
+  <!-- 页面标题 -->
+  <view class="page-header">
+    <text class="page-title">语音通讯测试</text>
+    <text class="page-subtitle">验证音频格式修复效果</text>
+  </view>
+
+  <!-- 状态面板 -->
+  <view class="status-panel">
+    <view class="status-item">
+      <text class="status-label">测试状态：</text>
+      <text class="status-value {{testStatus}}">{{getStatusText(testStatus)}}</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">连接状态：</text>
+      <text class="status-value">{{connectionStatus}}</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">录制状态：</text>
+      <text class="status-value">{{recordingStatus}}</text>
+    </view>
+  </view>
+
+  <!-- 测试结果列表 -->
+  <scroll-view class="results-container" scroll-y="true">
+    <view class="results-header">
+      <text class="results-title">测试结果</text>
+      <text class="results-count">{{testResults.length}} 条记录</text>
+    </view>
+    
+    <view class="results-list">
+      <block wx:for="{{testResults}}" wx:key="time">
+        <view class="result-item {{item.type}}">
+          <view class="result-time">{{item.time}}</view>
+          <view class="result-message">{{item.message}}</view>
+          <view class="result-type">{{getTypeText(item.type)}}</view>
+        </view>
+      </block>
+    </view>
+    
+    <view wx:if="{{testResults.length === 0}}" class="no-results">
+      <text>暂无测试结果</text>
+    </view>
+  </scroll-view>
+
+  <!-- 操作按钮 -->
+  <view class="action-buttons">
+    <button 
+      class="btn btn-primary" 
+      bindtap="retest"
+      disabled="{{testStatus === 'testing'}}"
+    >
+      {{testStatus === 'testing' ? '测试中...' : '重新测试'}}
+    </button>
+    
+    <button 
+      class="btn btn-secondary" 
+      bindtap="goBack"
+    >
+      返回
+    </button>
+  </view>
+
+  <!-- 测试说明 -->
+  <view class="test-info">
+    <text class="info-title">测试说明：</text>
+    <view class="info-content">
+      <text>1. 测试WebSocket连接功能</text>
+      <text>2. 测试PCM音频录制（16kHz, 单声道）</text>
+      <text>3. 测试音频数据格式验证</text>
+      <text>4. 测试音频播放功能</text>
+      <text>5. 验证修复后的音频通讯格式</text>
+    </view>
+  </view>
+</view>

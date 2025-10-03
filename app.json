@@ -5,7 +5,8 @@
     "pages/myPersonalDetails/myPersonalDetails",
     "pages/MainInterface/MainInterface",
     "pages/voice-call/voice-call",
-    "pages/video-call/video-call"
+    "pages/video-call/video-call",
+    "pages/test-voice/test-voice"
   ],
   "window": {
     "navigationBarTextStyle": "black",

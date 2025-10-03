@@ -1,0 +1,94 @@
+<!-- 语音通讯修复验证页面 -->
+<view class="test-voice-fix-container">
+  <!-- 页面标题 -->
+  <view class="page-header">
+    <text class="page-title">语音通讯修复验证</text>
+    <text class="page-subtitle">验证空对象发送问题是否已修复</text>
+  </view>
+
+  <!-- 状态面板 -->
+  <view class="status-panel">
+    <view class="status-item">
+      <text class="status-label">测试状态：</text>
+      <text class="status-value {{isTesting ? 'testing' : 'completed'}}">{{isTesting ? '测试中' : '测试完成'}}</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">连接状态：</text>
+      <text class="status-value">{{connectionStatus}}</text>
+    </view>
+  </view>
+
+  <!-- 测试结果列表 -->
+  <scroll-view class="results-container" scroll-y="true">
+    <view class="results-header">
+      <text class="results-title">测试结果</text>
+      <text class="results-count">{{testResults.length}} 条记录</text>
+    </view>
+    
+    <view class="results-list">
+      <block wx:for="{{testResults}}" wx:key="time">
+        <view class="result-item {{item.type}}">
+          <view class="result-time">{{item.time}}</view>
+          <view class="result-message">{{item.message}}</view>
+          <view class="result-type">{{getTypeText(item.type)}}</view>
+        </view>
+      </block>
+    </view>
+    
+    <view wx:if="{{testResults.length === 0}}" class="no-results">
+      <text>暂无测试结果</text>
+    </view>
+  </scroll-view>
+
+  <!-- 消息日志 -->
+  <scroll-view class="message-log-container" scroll-y="true">
+    <view class="log-header">
+      <text class="log-title">消息日志</text>
+      <text class="log-count">{{messageLog.length}} 条消息</text>
+    </view>
+    
+    <view class="log-list">
+      <block wx:for="{{messageLog}}" wx:key="time">
+        <view class="log-item">
+          <view class="log-time">{{item.time}}</view>
+          <view class="log-direction">{{item.direction}}</view>
+          <view class="log-message">{{item.message}}</view>
+        </view>
+      </block>
+    </view>
+    
+    <view wx:if="{{messageLog.length === 0}}" class="no-logs">
+      <text>暂无消息记录</text>
+    </view>
+  </scroll-view>
+
+  <!-- 操作按钮 -->
+  <view class="action-buttons">
+    <button 
+      class="btn btn-primary" 
+      bindtap="retest"
+      disabled="{{isTesting}}"
+    >
+      {{isTesting ? '测试中...' : '重新测试'}}
+    </button>
+    
+    <button 
+      class="btn btn-secondary" 
+      bindtap="goBack"
+    >
+      返回
+    </button>
+  </view>
+
+  <!-- 测试说明 -->
+  <view class="test-info">
+    <text class="info-title">测试说明：</text>
+    <view class="info-content">
+      <text>1. 测试WebSocket连接功能</text>
+      <text>2. 检测是否发送空对象 {}</text>
+      <text>3. 验证消息发送验证逻辑</text>
+      <text>4. 测试音频录制数据验证</text>
+      <text>5. 确保所有消息都经过safeSendMessage验证</text>
+    </view>
+  </view>
+</view>

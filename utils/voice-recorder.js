@@ -99,13 +99,13 @@ class VoiceRecorder {
       }
 
       const options = {
-        duration: this.maxDuration,
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        encodeBitRate: 48000,
-        format: 'mp3',
-        frameSize: 2
-      };
+      duration: this.maxDuration,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      encodeBitRate: 64000,
+      format: 'pcm',
+      frameSize: 10
+    };
 
       console.log('开始录音，参数:', options);
       
@@ -268,4 +268,20 @@ class VoiceRecorder {
   }
 }
 
-module.exports = VoiceRecorder;
+// 兼容微信小程序的模块导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = VoiceRecorder;
+} else if (typeof define === 'function' && define.amd) {
+  define(function() { return VoiceRecorder; });
+} else {
+  // 微信小程序环境
+  if (typeof VoiceRecorder !== 'undefined') {
+    // 全局导出，兼容小程序环境
+    if (typeof global !== 'undefined') {
+      global.VoiceRecorder = VoiceRecorder;
+    }
+    if (typeof window !== 'undefined') {
+      window.VoiceRecorder = VoiceRecorder;
+    }
+  }
+}

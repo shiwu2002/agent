@@ -20,6 +20,8 @@ Page({
     recordingTime: 0,
     recordingText: '按住说话',
     wsManager: null,
+    voiceWSManager: null,
+    videoWSManager: null,
     voiceRecorder: null,
     currentUser: {
       id: '',
@@ -157,17 +159,27 @@ Page({
     if (this.data.wsManager) {
       this.data.wsManager.disconnect();
     }
+    if (this.data.voiceWSManager) {
+      this.data.voiceWSManager.disconnect();
+    }
+    if (this.data.videoWSManager) {
+      this.data.videoWSManager.disconnect();
+    }
     if (this.data.voiceRecorder) {
       this.data.voiceRecorder.stop();
     }
   },
 
   /**
-   * 初始化WebSocket连接
+   * 初始化WebSocket连接（只连接文本聊天）
    */
   initWebSocket() {
+    const app = getApp();
+    const userId = app.globalData.openId || 'user123';
+    
+    // 文本聊天WebSocket（初始只连接文本）
     const wsManager = new WebSocketManager({
-      url: 'wss://your-websocket-server.com/chat',
+      url: `ws://localhost:8080/ws/chat?userId=${userId}`,
       onOpen: this.onWebSocketOpen.bind(this),
       onMessage: this.onWebSocketMessage.bind(this),
       onClose: this.onWebSocketClose.bind(this),
@@ -176,7 +188,18 @@ Page({
       maxReconnectAttempts: 5
     });
 
-    this.setData({ wsManager });
+    // 初始化语音和视频WebSocket管理器（但不连接）
+    const voiceWSManager = null;
+    const videoWSManager = null;
+
+    this.setData({ wsManager, voiceWSManager, videoWSManager });
+    
+    // 保存到全局数据，供通话页面使用
+    app.globalData.wsManager = wsManager;
+    app.globalData.voiceWSManager = voiceWSManager;
+    app.globalData.videoWSManager = videoWSManager;
+    
+    // 只连接文本WebSocket
     wsManager.connect();
   },
 
@@ -215,23 +238,94 @@ Page({
   onWebSocketMessage(message) {
     console.log('收到消息:', message);
     
-    const data = JSON.parse(message.data);
-    
-    switch (data.type) {
-      case 'message':
-        this.receiveMessage(data);
-        break;
-      case 'voice_call':
-        this.handleVoiceCall(data);
-        break;
-      case 'video_call':
-        this.handleVideoCall(data);
-        break;
-      case 'user_status':
-        this.updateUserStatus(data);
-        break;
-      default:
-        console.log('未知消息类型:', data.type);
+    try {
+      // 首先检查消息类型
+      if (typeof message.data === 'string') {
+        const messageText = message.data;
+        
+        // 检查是否为系统状态消息
+        if (messageText.includes('已连接到') || messageText.includes('连接成功')) {
+          console.log('系统连接状态消息:', messageText);
+          this.setData({ connectionStatus: '已连接' });
+          return;
+        }
+        
+        // 检查是否为错误消息
+        if (messageText.startsWith('抱歉，处理您的请求时发生了错误') || 
+            messageText.startsWith('处理失败:') || 
+            messageText.startsWith('识别失败:') || 
+            messageText.startsWith('AI处理失败:') ||
+            messageText.startsWith('处理消息失败:') ||
+            messageText.includes('Cannot invoke') ||
+            messageText.includes('NullPointerException')) {
+          console.error('服务器错误:', messageText);
+          wx.showToast({
+            title: '服务器处理失败，请稍后重试',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        // 尝试解析JSON，如果失败则作为纯文本处理
+        try {
+          const data = JSON.parse(messageText);
+          
+          switch (data.type) {
+            case 'message':
+              this.receiveMessage(data);
+              break;
+            case 'voice_call':
+              this.handleVoiceCall(data);
+              break;
+            case 'video_call':
+              this.handleVideoCall(data);
+              break;
+            case 'user_status':
+              this.updateUserStatus(data);
+              break;
+            case 'ping':
+              // 心跳响应
+              console.log('收到心跳ping');
+              break;
+            case 'pong':
+              // 心跳响应
+              console.log('收到心跳pong，延迟:', Date.now() - data.timestamp, 'ms');
+              break;
+            default:
+              console.log('未知消息类型:', data.type);
+          }
+        } catch (jsonError) {
+          // JSON解析失败，作为纯文本消息处理
+          console.log('收到纯文本消息，作为系统消息显示:', messageText);
+          this.receiveMessage({
+            id: `msg_${Date.now()}`,
+            type: 'text',
+            content: messageText,
+            isMe: false,
+            time: this.getCurrentTime(),
+            avatar: this.data.targetUser.avatar,
+            senderName: '系统',
+            senderId: 'system'
+          });
+        }
+      } else {
+        console.log('收到非文本消息:', message.data);
+      }
+    } catch (error) {
+      console.error('解析消息失败:', error, '原始消息:', message.data);
+      // 最后的兜底处理
+      if (typeof message.data === 'string') {
+        this.receiveMessage({
+          id: `msg_${Date.now()}`,
+          type: 'text',
+          content: '消息解析失败: ' + message.data,
+          isMe: false,
+          time: this.getCurrentTime(),
+          avatar: this.data.targetUser.avatar,
+          senderName: '系统',
+          senderId: 'system'
+        });
+      }
     }
   },
 
@@ -249,6 +343,167 @@ Page({
   onWebSocketError(error) {
     console.error('WebSocket错误:', error);
     this.setData({ connectionStatus: '连接失败' });
+  },
+
+  /**
+   * 语音WebSocket连接成功
+   */
+  onVoiceWebSocketOpen() {
+    console.log('语音WebSocket连接成功');
+    // 发送语音服务认证信息
+    this.data.voiceWSManager.send({
+      type: 'auth',
+      userId: this.data.currentUser.id,
+      targetUserId: this.data.targetUser.id,
+      service: 'voice'
+    });
+  },
+
+  /**
+   * 收到语音WebSocket消息
+   */
+  onVoiceWebSocketMessage(message) {
+    console.log('收到语音WebSocket消息:', message);
+    
+    try {
+      if (typeof message.data === 'string') {
+        // 检查是否为错误消息
+        if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
+            message.data.startsWith('处理失败:') || 
+            message.data.startsWith('识别失败:') || 
+            message.data.startsWith('AI处理失败:')) {
+          console.error('语音服务器错误:', message.data);
+          wx.showToast({
+            title: '语音服务错误，请稍后重试',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        const data = JSON.parse(message.data);
+        
+        switch (data.type) {
+          case 'voice_call':
+            this.handleVoiceCall(data);
+            break;
+          case 'voice_call_request':
+            this.handleVoiceCallRequest(data);
+            break;
+          case 'voice_call_accept':
+            this.handleVoiceCallAccept(data);
+            break;
+          case 'voice_call_reject':
+            this.handleVoiceCallReject(data);
+            break;
+          case 'voice_call_end':
+            this.handleVoiceCallEnd(data);
+            break;
+          default:
+            console.log('未知语音消息类型:', data.type);
+        }
+      }
+    } catch (error) {
+      console.error('解析语音消息失败:', error, '原始消息:', message.data);
+    }
+  },
+
+  /**
+   * 语音WebSocket连接关闭
+   */
+  onVoiceWebSocketClose() {
+    console.log('语音WebSocket连接关闭');
+  },
+
+  /**
+   * 语音WebSocket错误
+   */
+  onVoiceWebSocketError(error) {
+    console.error('语音WebSocket错误:', error);
+  },
+
+  /**
+   * 视频WebSocket连接成功
+   */
+  onVideoWebSocketOpen() {
+    console.log('视频WebSocket连接成功');
+    // 发送视频服务认证信息
+    this.data.videoWSManager.send({
+      type: 'auth',
+      userId: this.data.currentUser.id,
+      targetUserId: this.data.targetUser.id,
+      service: 'video'
+    });
+  },
+
+  /**
+   * 收到视频WebSocket消息
+   */
+  onVideoWebSocketMessage(message) {
+    console.log('收到视频WebSocket消息:', message);
+    
+    try {
+      if (typeof message.data === 'string') {
+        // 检查是否为错误消息
+        if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
+            message.data.startsWith('处理失败:') || 
+            message.data.startsWith('识别失败:') || 
+            message.data.startsWith('AI处理失败:')) {
+          console.error('视频服务器错误:', message.data);
+          wx.showToast({
+            title: '视频服务错误，请稍后重试',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        const data = JSON.parse(message.data);
+        
+        switch (data.type) {
+          case 'video_call':
+            this.handleVideoCall(data);
+            break;
+          case 'video_call_request':
+            this.handleVideoCallRequest(data);
+            break;
+          case 'video_call_accept':
+            this.handleVideoCallAccept(data);
+            break;
+          case 'video_call_reject':
+            this.handleVideoCallReject(data);
+            break;
+          case 'video_call_end':
+            this.handleVideoCallEnd(data);
+            break;
+          case 'webrtc_offer':
+            this.handleWebRTCOffer(data);
+            break;
+          case 'webrtc_answer':
+            this.handleWebRTCAnswer(data);
+            break;
+          case 'webrtc_ice':
+            this.handleWebRTCIce(data);
+            break;
+          default:
+            console.log('未知视频消息类型:', data.type);
+        }
+      }
+    } catch (error) {
+      console.error('解析视频消息失败:', error, '原始消息:', message.data);
+    }
+  },
+
+  /**
+   * 视频WebSocket连接关闭
+   */
+  onVideoWebSocketClose() {
+    console.log('视频WebSocket连接关闭');
+  },
+
+  /**
+   * 视频WebSocket错误
+   */
+  onVideoWebSocketError(error) {
+    console.error('视频WebSocket错误:', error);
   },
 
   /**
@@ -314,16 +569,14 @@ Page({
     });
 
     // 通过WebSocket发送
-    if (this.data.wsManager && this.data.wsManager.isConnected()) {
-      this.data.wsManager.send({
-        type: 'message',
-        messageType: 'text',
-        content: content,
-        senderId: this.data.currentUser.id,
-        targetId: this.data.targetUser.id,
-        timestamp: Date.now()
-      });
-    }
+    this.safeSendMessage(this.data.wsManager, {
+      type: 'message',
+      messageType: 'text',
+      content: content,
+      senderId: this.data.currentUser.id,
+      targetId: this.data.targetUser.id,
+      timestamp: Date.now()
+    });
   },
 
   /**
@@ -522,15 +775,18 @@ Page({
         const data = JSON.parse(res.data);
         if (data.success) {
           // 通过WebSocket发送语音消息
-          this.data.wsManager.send({
-            type: 'message',
-            messageType: 'voice',
-            voiceUrl: data.url,
-            duration: Math.ceil(duration / 1000),
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
+          const wsManager = this.data.voiceWSManager || this.data.wsManager;
+          if (wsManager && wsManager.isConnected()) {
+            wsManager.send({
+              type: 'message',
+              messageType: 'voice',
+              voiceUrl: data.url,
+              duration: Math.ceil(duration / 1000),
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+          }
         }
       },
       fail: (error) => {
@@ -600,6 +856,196 @@ Page({
           this.sendImageMessage(filePath);
         });
       }
+    });
+  },
+
+  /**
+   * 选择文件
+   */
+  chooseFile() {
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      success: (res) => {
+        const file = res.tempFiles[0];
+        this.sendFileMessage(file.path, file.name, file.size);
+      },
+      fail: (error) => {
+        console.error('选择文件失败:', error);
+      }
+    });
+  },
+
+  /**
+   * 发送文件消息
+   */
+  sendFileMessage(filePath, fileName, fileSize) {
+    const message = {
+      id: `msg_${Date.now()}`,
+      type: 'file',
+      fileName: fileName,
+      fileSize: this.formatFileSize(fileSize),
+      filePath: filePath,
+      isMe: true,
+      time: this.getCurrentTime(),
+      avatar: this.data.currentUser.avatar,
+      senderName: this.data.currentUser.name,
+      senderId: this.data.currentUser.id
+    };
+
+    const messages = [...this.data.messages, message];
+    this.setData({
+      messages: messages,
+      toView: `msg-${messages.length - 1}`,
+      showMoreMenu: false
+    });
+
+    // 上传文件
+    this.uploadFile(filePath, fileName, fileSize);
+  },
+
+  /**
+   * 上传文件
+   */
+  uploadFile(filePath, fileName, fileSize) {
+    wx.uploadFile({
+      url: 'https://your-server.com/upload/file',
+      filePath: filePath,
+      name: 'file',
+      formData: {
+        fileName: fileName,
+        fileSize: fileSize,
+        senderId: this.data.currentUser.id,
+        targetId: this.data.targetUser.id
+      },
+      success: (res) => {
+        const data = JSON.parse(res.data);
+        if (data.success) {
+          // 通过WebSocket发送文件消息
+          this.data.wsManager.send({
+            type: 'message',
+            messageType: 'file',
+            fileName: fileName,
+            fileSize: this.formatFileSize(fileSize),
+            fileUrl: data.url,
+            senderId: this.data.currentUser.id,
+            targetId: this.data.targetUser.id,
+            timestamp: Date.now()
+          });
+        }
+      },
+      fail: (error) => {
+        console.error('上传文件失败:', error);
+      }
+    });
+  },
+
+  /**
+   * 分享位置
+   */
+  shareLocation() {
+    wx.chooseLocation({
+      success: (res) => {
+        this.sendLocationMessage(res.name, res.address, res.latitude, res.longitude);
+      },
+      fail: (error) => {
+        console.error('选择位置失败:', error);
+      }
+    });
+  },
+
+  /**
+   * 发送位置消息
+   */
+  sendLocationMessage(name, address, latitude, longitude) {
+    const message = {
+      id: `msg_${Date.now()}`,
+      type: 'location',
+      locationName: name,
+      locationAddress: address,
+      latitude: latitude,
+      longitude: longitude,
+      isMe: true,
+      time: this.getCurrentTime(),
+      avatar: this.data.currentUser.avatar,
+      senderName: this.data.currentUser.name,
+      senderId: this.data.currentUser.id
+    };
+
+    const messages = [...this.data.messages, message];
+    this.setData({
+      messages: messages,
+      toView: `msg-${messages.length - 1}`,
+      showMoreMenu: false
+    });
+
+    // 通过WebSocket发送位置消息
+    this.data.wsManager.send({
+      type: 'message',
+      messageType: 'location',
+      locationName: name,
+      locationAddress: address,
+      latitude: latitude,
+      longitude: longitude,
+      senderId: this.data.currentUser.id,
+      targetId: this.data.targetUser.id,
+      timestamp: Date.now()
+    });
+  },
+
+  /**
+   * 格式化文件大小
+   */
+  formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  },
+
+  /**
+   * 下载文件
+   */
+  downloadFile(e) {
+    const { url, name } = e.currentTarget.dataset;
+    
+    wx.downloadFile({
+      url: url,
+      success: (res) => {
+        if (res.statusCode === 200) {
+          // 保存文件到本地
+          wx.saveFile({
+            tempFilePath: res.tempFilePath,
+            success: (saveRes) => {
+              wx.showToast({
+                title: '文件已保存',
+                icon: 'success'
+              });
+            }
+          });
+        }
+      },
+      fail: (error) => {
+        wx.showToast({
+          title: '下载失败',
+          icon: 'none'
+        });
+      }
+    });
+  },
+
+  /**
+   * 打开位置
+   */
+  openLocation(e) {
+    const { latitude, longitude, name, address } = e.currentTarget.dataset;
+    
+    wx.openLocation({
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      name: name,
+      address: address
     });
   },
 
@@ -677,6 +1123,43 @@ Page({
   },
 
   /**
+   * 初始化语音WebSocket连接（按需连接）
+   */
+  initVoiceWebSocket() {
+    if (this.data.voiceWSManager) {
+      return Promise.resolve(this.data.voiceWSManager);
+    }
+
+    return new Promise((resolve, reject) => {
+      const app = getApp();
+      const userId = app.globalData.openId || 'user123';
+      
+      const voiceWSManager = new WebSocketManager({
+        url: `ws://localhost:8080/ws/voice?userId=${userId}`,
+        onOpen: () => {
+          console.log('语音WebSocket连接成功');
+          this.onVoiceWebSocketOpen();
+          resolve(voiceWSManager);
+        },
+        onMessage: this.onVoiceWebSocketMessage.bind(this),
+        onClose: this.onVoiceWebSocketClose.bind(this),
+        onError: (error) => {
+          console.error('语音WebSocket连接失败:', error);
+          this.onVoiceWebSocketError(error);
+          reject(error);
+        },
+        reconnectInterval: 3000,
+        maxReconnectAttempts: 5
+      });
+
+      this.setData({ voiceWSManager });
+      app.globalData.voiceWSManager = voiceWSManager;
+      
+      voiceWSManager.connect();
+    });
+  },
+
+  /**
    * 开始语音通话
    */
   startVoiceCall() {
@@ -685,20 +1168,144 @@ Page({
       content: '是否开始语音通话？',
       success: (res) => {
         if (res.confirm) {
-          // 发送语音通话请求
-          this.data.wsManager.send({
-            type: 'voice_call_request',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-          
-          // 跳转到通话页面
-          wx.navigateTo({
-            url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}`
+          // 先初始化语音WebSocket连接
+          this.initVoiceWebSocket().then((voiceWSManager) => {
+            // 发送语音通话请求
+            voiceWSManager.send({
+              type: 'voice_call_request',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+            
+            // 跳转到通话页面
+            wx.navigateTo({
+              url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}`
+            });
+          }).catch((error) => {
+            wx.showToast({
+              title: '语音连接失败',
+              icon: 'none'
+            });
+            console.error('语音WebSocket初始化失败:', error);
           });
         }
       }
+    });
+  },
+
+  /**
+   * 初始化视频WebSocket连接（按需连接）
+   */
+  initVideoWebSocket() {
+    if (this.data.videoWSManager) {
+      return Promise.resolve(this.data.videoWSManager);
+    }
+
+    return new Promise((resolve, reject) => {
+      const app = getApp();
+      const userId = app.globalData.openId || 'user123';
+      
+      const videoWSManager = new WebSocketManager({
+        url: `ws://localhost:8080/ws/video?userId=${userId}`,
+        onOpen: () => {
+          console.log('视频WebSocket连接成功');
+          this.onVideoWebSocketOpen();
+          resolve(videoWSManager);
+        },
+        onMessage: this.onVideoWebSocketMessage.bind(this),
+        onClose: this.onVideoWebSocketClose.bind(this),
+        onError: (error) => {
+          console.error('视频WebSocket连接失败:', error);
+          this.onVideoWebSocketError(error);
+          reject(error);
+        },
+        reconnectInterval: 3000,
+        maxReconnectAttempts: 5
+      });
+
+      this.setData({ videoWSManager });
+      app.globalData.videoWSManager = videoWSManager;
+      
+      videoWSManager.connect();
+    });
+  },
+
+  /**
+   * 开始语音通话
+   */
+  startVoiceCall() {
+    wx.showModal({
+      title: '语音通话',
+      content: '是否开始语音通话？',
+      success: (res) => {
+        if (res.confirm) {
+          // 先初始化语音WebSocket连接
+          this.initVoiceWebSocket().then((voiceWSManager) => {
+            // 发送语音通话请求
+            voiceWSManager.send({
+              type: 'voice_call_request',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+            
+            // 跳转到语音通话页面
+            wx.navigateTo({
+              url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=true`
+            });
+          }).catch((error) => {
+            wx.showToast({
+              title: '语音连接失败',
+              icon: 'none'
+            });
+            console.error('语音WebSocket初始化失败:', error);
+          });
+        }
+      }
+    });
+  },
+
+  /**
+   * 初始化语音WebSocket连接（按需连接）
+   */
+  initVoiceWebSocket() {
+    if (this.data.voiceWSManager) {
+      return Promise.resolve(this.data.voiceWSManager);
+    }
+
+    return new Promise((resolve, reject) => {
+      const app = getApp();
+      const userId = app.globalData.openId || 'user123';
+      
+      const voiceWSManager = new WebSocketManager({
+        url: `ws://localhost:8080/ws/voice?userId=${userId}`,
+        onOpen: () => {
+          console.log('语音WebSocket连接成功');
+          // 发送认证信息
+          voiceWSManager.send({
+            type: 'auth',
+            userId: this.data.currentUser.id,
+            targetUserId: this.data.targetUser.id,
+            service: 'voice'
+          });
+          resolve(voiceWSManager);
+        },
+        onMessage: this.onVoiceWebSocketMessage.bind(this),
+        onClose: this.onVoiceWebSocketClose.bind(this),
+        onError: (error) => {
+          console.error('语音WebSocket连接失败:', error);
+          this.onVoiceWebSocketError(error);
+          reject(error);
+        },
+        reconnectInterval: 3000,
+        maxReconnectAttempts: 5
+      });
+
+      this.setData({ voiceWSManager });
+      app.globalData.voiceWSManager = voiceWSManager;
+      
+      voiceWSManager.connect();
     });
   },
 
@@ -711,17 +1318,26 @@ Page({
       content: '是否开始视频通话？',
       success: (res) => {
         if (res.confirm) {
-          // 发送视频通话请求
-          this.data.wsManager.send({
-            type: 'video_call_request',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-          
-          // 跳转到通话页面
-          wx.navigateTo({
-            url: `/pages/video-call/video-call?type=video&targetUserId=${this.data.targetUser.id}`
+          // 先初始化视频WebSocket连接
+          this.initVideoWebSocket().then((videoWSManager) => {
+            // 发送视频通话请求
+            videoWSManager.send({
+              type: 'video_call_request',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+            
+            // 跳转到通话页面
+            wx.navigateTo({
+              url: `/pages/video-call/video-call?type=video&targetUserId=${this.data.targetUser.id}`
+            });
+          }).catch((error) => {
+            wx.showToast({
+              title: '视频连接失败',
+              icon: 'none'
+            });
+            console.error('视频WebSocket初始化失败:', error);
           });
         }
       }
@@ -741,7 +1357,7 @@ Page({
       success: (res) => {
         if (res.confirm) {
           // 接听
-          this.data.wsManager.send({
+          this.data.voiceWSManager.send({
             type: 'voice_call_accept',
             senderId: this.data.currentUser.id,
             targetId: this.data.targetUser.id,
@@ -753,7 +1369,7 @@ Page({
           });
         } else {
           // 拒绝
-          this.data.wsManager.send({
+          this.data.voiceWSManager.send({
             type: 'voice_call_reject',
             senderId: this.data.currentUser.id,
             targetId: this.data.targetUser.id,
@@ -777,7 +1393,7 @@ Page({
       success: (res) => {
         if (res.confirm) {
           // 接听
-          this.data.wsManager.send({
+          this.data.videoWSManager.send({
             type: 'video_call_accept',
             senderId: this.data.currentUser.id,
             targetId: this.data.targetUser.id,
@@ -789,7 +1405,7 @@ Page({
           });
         } else {
           // 拒绝
-          this.data.wsManager.send({
+          this.data.videoWSManager.send({
             type: 'video_call_reject',
             senderId: this.data.currentUser.id,
             targetId: this.data.targetUser.id,
@@ -839,6 +1455,343 @@ Page({
   },
 
   /**
+   * 处理语音通话请求
+   */
+  handleVoiceCallRequest(data) {
+    console.log('处理语音通话请求:', data);
+    this.handleVoiceCall(data);
+  },
+
+  /**
+   * 处理语音通话接受
+   */
+  handleVoiceCallAccept(data) {
+    console.log('语音通话已接受:', data);
+    wx.showToast({
+      title: '对方已接受语音通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理语音通话拒绝
+   */
+  handleVoiceCallReject(data) {
+    console.log('语音通话被拒绝:', data);
+    wx.showToast({
+      title: '对方拒绝了语音通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理语音通话结束
+   */
+  handleVoiceCallEnd(data) {
+    console.log('语音通话结束:', data);
+    wx.showToast({
+      title: '语音通话已结束',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理视频通话请求
+   */
+  handleVideoCallRequest(data) {
+    console.log('处理视频通话请求:', data);
+    this.handleVideoCall(data);
+  },
+
+  /**
+   * 处理视频通话接受
+   */
+  handleVideoCallAccept(data) {
+    console.log('视频通话已接受:', data);
+    wx.showToast({
+      title: '对方已接受视频通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理视频通话拒绝
+   */
+  handleVideoCallReject(data) {
+    console.log('视频通话被拒绝:', data);
+    wx.showToast({
+      title: '对方拒绝了视频通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理视频通话结束
+   */
+  handleVideoCallEnd(data) {
+    console.log('视频通话结束:', data);
+    wx.showToast({
+      title: '视频通话已结束',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理WebRTC Offer
+   */
+  handleWebRTCOffer(data) {
+    console.log('收到WebRTC Offer:', data);
+    // 这里可以处理WebRTC连接建立
+  },
+
+  /**
+   * 处理WebRTC Answer
+   */
+  handleWebRTCAnswer(data) {
+    console.log('收到WebRTC Answer:', data);
+    // 这里可以处理WebRTC连接建立
+  },
+
+  /**
+   * 处理WebRTC ICE候选
+   */
+  handleWebRTCIce(data) {
+    console.log('收到WebRTC ICE候选:', data);
+    // 这里可以处理WebRTC连接建立
+  },
+
+  /**
+   * 开始语音通话
+   */
+  startVoiceCall() {
+    wx.showModal({
+      title: '语音通话',
+      content: '是否开始语音通话？',
+      success: (res) => {
+        if (res.confirm) {
+          // 先初始化语音WebSocket连接
+          this.initVoiceWebSocket().then((voiceWSManager) => {
+            // 发送语音通话请求
+            voiceWSManager.send({
+              type: 'voice_call_request',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+            
+            // 跳转到通话页面
+            wx.navigateTo({
+              url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}`
+            });
+          }).catch((error) => {
+            wx.showToast({
+              title: '语音连接失败',
+              icon: 'none'
+            });
+            console.error('语音WebSocket初始化失败:', error);
+          });
+        }
+      }
+    });
+  },
+
+  /**
+   * 初始化语音WebSocket连接（按需连接）
+   */
+  initVoiceWebSocket() {
+    if (this.data.voiceWSManager) {
+      return Promise.resolve(this.data.voiceWSManager);
+    }
+
+    return new Promise((resolve, reject) => {
+      const app = getApp();
+      const userId = app.globalData.openId || 'user123';
+      
+      const voiceWSManager = new WebSocketManager({
+        url: `ws://localhost:8080/ws/voice?userId=${userId}`,
+        onOpen: () => {
+          console.log('语音WebSocket连接成功');
+          this.onVoiceWebSocketOpen();
+          resolve(voiceWSManager);
+        },
+        onMessage: this.onVoiceWebSocketMessage.bind(this),
+        onClose: this.onVoiceWebSocketClose.bind(this),
+        onError: (error) => {
+          console.error('语音WebSocket连接失败:', error);
+          this.onVoiceWebSocketError(error);
+          reject(error);
+        },
+        reconnectInterval: 3000,
+        maxReconnectAttempts: 5
+      });
+
+      this.setData({ voiceWSManager });
+      app.globalData.voiceWSManager = voiceWSManager;
+      
+      voiceWSManager.connect();
+    });
+  },
+
+  /**
+   * 语音WebSocket连接成功
+   */
+  onVoiceWebSocketOpen() {
+    console.log('语音WebSocket连接成功');
+    // 发送语音服务认证信息
+    if (this.data.voiceWSManager) {
+      this.data.voiceWSManager.send({
+        type: 'auth',
+        userId: this.data.currentUser.id,
+        targetUserId: this.data.targetUser.id,
+        service: 'voice'
+      });
+    }
+  },
+
+  /**
+   * 收到语音WebSocket消息
+   */
+  onVoiceWebSocketMessage(message) {
+    console.log('收到语音WebSocket消息:', message);
+    
+    try {
+      if (typeof message.data === 'string') {
+        // 检查是否为错误消息
+        if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
+            message.data.startsWith('处理失败:') || 
+            message.data.startsWith('识别失败:') || 
+            message.data.startsWith('AI处理失败:')) {
+          console.error('语音服务器错误:', message.data);
+          wx.showToast({
+            title: '语音服务错误，请稍后重试',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        const data = JSON.parse(message.data);
+        
+        switch (data.type) {
+          case 'voice_call':
+            this.handleVoiceCall(data);
+            break;
+          case 'voice_call_request':
+            this.handleVoiceCallRequest(data);
+            break;
+          case 'voice_call_accept':
+            this.handleVoiceCallAccept(data);
+            break;
+          case 'voice_call_reject':
+            this.handleVoiceCallReject(data);
+            break;
+          case 'voice_call_end':
+            this.handleVoiceCallEnd(data);
+            break;
+          default:
+            console.log('未知语音消息类型:', data.type);
+        }
+      }
+    } catch (error) {
+      console.error('解析语音消息失败:', error, '原始消息:', message.data);
+    }
+  },
+
+  /**
+   * 语音WebSocket连接关闭
+   */
+  onVoiceWebSocketClose() {
+    console.log('语音WebSocket连接关闭');
+  },
+
+  /**
+   * 语音WebSocket错误
+   */
+  onVoiceWebSocketError(error) {
+    console.error('语音WebSocket错误:', error);
+  },
+
+  /**
+   * 处理语音通话
+   */
+  handleVoiceCall(data) {
+    // 显示来电界面
+    wx.showModal({
+      title: '语音来电',
+      content: `${this.data.targetUser.name} 邀请你进行语音通话`,
+      confirmText: '接听',
+      cancelText: '拒绝',
+      success: (res) => {
+        if (res.confirm) {
+          // 接听
+          if (this.data.voiceWSManager) {
+            this.data.voiceWSManager.send({
+              type: 'voice_call_accept',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+          }
+          
+          wx.navigateTo({
+            url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=false`
+          });
+        } else {
+          // 拒绝
+          if (this.data.voiceWSManager) {
+            this.data.voiceWSManager.send({
+              type: 'voice_call_reject',
+              senderId: this.data.currentUser.id,
+              targetId: this.data.targetUser.id,
+              timestamp: Date.now()
+            });
+          }
+        }
+      }
+    });
+  },
+
+  /**
+   * 处理语音通话请求
+   */
+  handleVoiceCallRequest(data) {
+    console.log('处理语音通话请求:', data);
+    this.handleVoiceCall(data);
+  },
+
+  /**
+   * 处理语音通话接受
+   */
+  handleVoiceCallAccept(data) {
+    console.log('语音通话已接受:', data);
+    wx.showToast({
+      title: '对方已接受语音通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理语音通话拒绝
+   */
+  handleVoiceCallReject(data) {
+    console.log('语音通话被拒绝:', data);
+    wx.showToast({
+      title: '对方拒绝了语音通话',
+      icon: 'none'
+    });
+  },
+
+  /**
+   * 处理语音通话结束
+   */
+  handleVoiceCallEnd(data) {
+    console.log('语音通话结束:', data);
+    wx.showToast({
+      title: '语音通话已结束',
+      icon: 'none'
+    });
+  },
+
+  /**
    * 滚动到底部
    */
   scrollToBottom() {
@@ -847,6 +1800,30 @@ Page({
       this.setData({
         toView: `msg-${length - 1}`
       });
+    }
+  },
+
+  /**
+   * 检查WebSocket连接状态
+   */
+  isWebSocketConnected(wsManager) {
+    return wsManager && wsManager.isConnected;
+  },
+
+  /**
+   * 安全发送WebSocket消息
+   */
+  safeSendMessage(wsManager, message) {
+    if (this.isWebSocketConnected(wsManager)) {
+      wsManager.send(message);
+      return true;
+    } else {
+      console.warn('WebSocket未连接，无法发送消息:', message);
+      wx.showToast({
+        title: '连接断开，请稍后重试',
+        icon: 'none'
+      });
+      return false;
     }
   }
 })

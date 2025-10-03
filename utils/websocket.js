@@ -72,6 +72,28 @@ class WebSocketManager {
     // 收到消息
     this.socket.onMessage((message) => {
       console.log('收到WebSocket消息:', message);
+      
+      // 添加消息类型检查和处理
+      if (typeof message.data === 'string') {
+        // 检查是否为错误消息
+        if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
+            message.data.startsWith('处理失败:') || 
+            message.data.startsWith('识别失败:') || 
+            message.data.startsWith('AI处理失败:')) {
+          console.error('服务器错误消息:', message.data);
+          // 仍然传递给上层处理，但标记为错误类型
+          const errorMessage = {
+            data: JSON.stringify({
+              type: 'error',
+              message: message.data,
+              timestamp: Date.now()
+            })
+          };
+          this.onMessage(errorMessage);
+          return;
+        }
+      }
+      
       this.onMessage(message);
     });
 

@@ -587,3 +587,119 @@
   text-align: center;
   line-height: 1.2;
 }
+
+/* 文件消息 - 微信对称风格 */
+.file-bubble {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 28rpx; /* 增加内边距，与文本气泡保持一致 */
+  border-radius: 20rpx;
+  min-width: 200rpx;
+  max-width: 400rpx;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 60rpx; /* 增加最小高度，与文本气泡保持一致 */
+}
+
+.file-bubble-left {
+  background-color: #ffffff;
+  border-top-left-radius: 6rpx;
+  margin-left: 0;      /* 自然贴边 */
+}
+
+.file-bubble-right {
+  background-color: #95ec69;
+  border-top-right-radius: 6rpx;
+  flex-direction: row-reverse;
+  margin-right: 0;     /* 自然贴边 */
+}
+
+.file-bubble:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+}
+
+.file-icon {
+  width: 48rpx;
+  height: 48rpx;
+  margin: 0 16rpx;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  margin: 0 16rpx;
+}
+
+.file-name {
+  font-size: 28rpx;
+  color: #333333;
+  margin-bottom: 4rpx;
+  max-width: 200rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+/* 位置消息 - 微信对称风格 */
+.location-bubble {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 28rpx; /* 增加内边距，与文本气泡保持一致 */
+  border-radius: 20rpx;
+  min-width: 200rpx;
+  max-width: 400rpx;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 60rpx; /* 增加最小高度，与文本气泡保持一致 */
+}
+
+.location-bubble-left {
+  background-color: #ffffff;
+  border-top-left-radius: 6rpx;
+  margin-left: 0;      /* 自然贴边 */
+}
+
+.location-bubble-right {
+  background-color: #95ec69;
+  border-top-right-radius: 6rpx;
+  flex-direction: row-reverse;
+  margin-right: 0;     /* 自然贴边 */
+}
+
+.location-bubble:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+}
+
+.location-icon {
+  width: 48rpx;
+  height: 48rpx;
+  margin: 0 16rpx;
+}
+
+.location-info {
+  display: flex;
+  flex-direction: column;
+  margin: 0 16rpx;
+}
+
+.location-name {
+  font-size: 28rpx;
+  color: #333333;
+  margin-bottom: 4rpx;
+  max-width: 200rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-address {
+  font-size: 24rpx;
+  color: #666666;
+}

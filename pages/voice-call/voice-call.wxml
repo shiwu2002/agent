@@ -1,0 +1,83 @@
+<!--pages/voice-call/voice-call.wxml-->
+<view class="voice-call-container">
+  <!-- 顶部状态栏 -->
+  <view class="status-bar">
+    <view class="call-status">
+      <text wx:if="{{callStatus === 'connecting'}}" class="status-text">正在连接...</text>
+      <text wx:if="{{callStatus === 'connected'}}" class="status-text">通话中 {{callDurationText}}</text>
+      <text wx:if="{{callStatus === 'disconnected'}}" class="status-text">通话已结束</text>
+    </view>
+  </view>
+
+  <!-- 通话界面主体 -->
+  <view class="call-main">
+    <!-- 对方用户信息 -->
+    <view class="remote-user-info">
+      <image class="remote-avatar" src="{{targetUserInfo.avatar}}" mode="aspectFill"></image>
+      <text class="remote-name">{{targetUserInfo.name}}</text>
+    </view>
+
+    <!-- 通话状态图标 -->
+    <view class="call-status-icon">
+      <view wx:if="{{callStatus === 'connecting'}}" class="connecting-icon">
+        <view class="pulse-ring"></view>
+        <view class="pulse-ring"></view>
+        <view class="pulse-ring"></view>
+      </view>
+      <image wx:if="{{callStatus === 'connected'}}" class="connected-icon" src="/pages/images/语音.png" mode="aspectFit"></image>
+    </view>
+
+    <!-- 通话时长显示 -->
+    <view wx:if="{{callStatus === 'connected'}}" class="call-duration">
+      <text class="duration-text">{{callDurationText}}</text>
+    </view>
+  </view>
+
+  <!-- 控制按钮区域 -->
+  <view class="control-area" wx:if="{{showControls}}">
+    <!-- 第一行控制按钮 -->
+    <view class="control-row">
+      <!-- 静音按钮 -->
+      <view class="control-item" bindtap="toggleMute">
+        <view class="control-button {{isMuted ? 'active' : ''}}">
+          <image class="control-icon" src="/pages/images/{{isMuted ? '语音撤回' : '语音'}}.png" mode="aspectFit"></image>
+        </view>
+        <text class="control-label">{{isMuted ? '取消静音' : '静音'}}</text>
+      </view>
+
+      <!-- 扬声器按钮 -->
+      <view class="control-item" bindtap="toggleSpeaker">
+        <view class="control-button {{isSpeaker ? 'active' : ''}}">
+          <image class="control-icon" src="/pages/images/{{isSpeaker ? '语音' : '语音'}}.png" mode="aspectFit"></image>
+        </view>
+        <text class="control-label">{{isSpeaker ? '扬声器' : '听筒'}}</text>
+      </view>
+
+      <!-- 键盘按钮 -->
+      <view class="control-item" bindtap="toggleKeyboard">
+        <view class="control-button">
+          <image class="control-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
+        </view>
+        <text class="control-label">键盘</text>
+      </view>
+    </view>
+
+    <!-- 挂断按钮 -->
+    <view class="hang-up-row">
+      <view class="hang-up-button" bindtap="hangUp">
+        <image class="hang-up-icon" src="/pages/images/语音撤回.png" mode="aspectFit"></image>
+      </view>
+    </view>
+  </view>
+
+  <!-- 隐藏控制按钮时的简单界面 -->
+  <view class="simple-interface" wx:if="{{!showControls}}">
+    <view class="simple-info">
+      <text class="simple-text">{{targetUserInfo.name}}</text>
+      <text class="simple-duration">{{callDurationText}}</text>
+    </view>
+    <view class="simple-hang-up" bindtap="hangUp">
+      <image class="simple-hang-up-icon" src="/pages/images/语音撤回.png" mode="aspectFit"></image>
+    </view>
+  </view>
+</view>

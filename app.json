@@ -3,7 +3,9 @@
     "pages/index/index",
     "pages/logs/logs",
     "pages/myPersonalDetails/myPersonalDetails",
-    "pages/MainInterface/MainInterface"
+    "pages/MainInterface/MainInterface",
+    "pages/voice-call/voice-call",
+    "pages/video-call/video-call"
   ],
   "window": {
     "navigationBarTextStyle": "black",

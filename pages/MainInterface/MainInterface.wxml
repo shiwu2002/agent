@@ -26,6 +26,20 @@
             <view wx:if="{{item.type === 'image'}}" class="image-bubble image-bubble-left" bindtap="previewImage" data-src="{{item.imageUrl}}">
               <image class="message-image" src="{{item.imageUrl}}" mode="aspectFill" lazy-load="true"></image>
             </view>
+            <view wx:if="{{item.type === 'file'}}" class="file-bubble file-bubble-left" bindtap="downloadFile" data-url="{{item.fileUrl}}" data-name="{{item.fileName}}">
+              <image class="file-icon" src="/pages/images/文件.png" mode="aspectFit"></image>
+              <view class="file-info">
+                <text class="file-name">{{item.fileName}}</text>
+                <text class="file-size">{{item.fileSize}}</text>
+              </view>
+            </view>
+            <view wx:if="{{item.type === 'location'}}" class="location-bubble location-bubble-left" bindtap="openLocation" data-latitude="{{item.latitude}}" data-longitude="{{item.longitude}}" data-name="{{item.locationName}}" data-address="{{item.locationAddress}}">
+              <image class="location-icon" src="/pages/images/位置.png" mode="aspectFit"></image>
+              <view class="location-info">
+                <text class="location-name">{{item.locationName}}</text>
+                <text class="location-address">{{item.locationAddress}}</text>
+              </view>
+            </view>
           </view>
         </view>
       </block>
@@ -47,6 +61,20 @@
             </view>
             <view wx:if="{{item.type === 'image'}}" class="image-bubble image-bubble-right" bindtap="previewImage" data-src="{{item.imageUrl}}">
               <image class="message-image" src="{{item.imageUrl}}" mode="aspectFill" lazy-load="true"></image>
+            </view>
+            <view wx:if="{{item.type === 'file'}}" class="file-bubble file-bubble-right" bindtap="downloadFile" data-url="{{item.fileUrl}}" data-name="{{item.fileName}}">
+              <image class="file-icon" src="/pages/images/文件.png" mode="aspectFit"></image>
+              <view class="file-info">
+                <text class="file-name">{{item.fileName}}</text>
+                <text class="file-size">{{item.fileSize}}</text>
+              </view>
+            </view>
+            <view wx:if="{{item.type === 'location'}}" class="location-bubble location-bubble-right" bindtap="openLocation" data-latitude="{{item.latitude}}" data-longitude="{{item.longitude}}" data-name="{{item.locationName}}" data-address="{{item.locationAddress}}">
+              <image class="location-icon" src="/pages/images/位置.png" mode="aspectFit"></image>
+              <view class="location-info">
+                <text class="location-name">{{item.locationName}}</text>
+                <text class="location-address">{{item.locationAddress}}</text>
+              </view>
             </view>
           </view>
           <image class="avatar avatar-right" src="{{item.avatar}}" mode="aspectFill" binderror="onMessageAvatarError" data-avatar-type="current"></image>

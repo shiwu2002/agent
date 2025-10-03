@@ -80,20 +80,7 @@
       <view class="input-center-area">
         <!-- 文本输入模式 -->
         <view wx:if="{{inputMode === 'text'}}" class="text-input-wrapper">
-          <!-- 更多功能按钮（微信风格） -->
-          <view class="more-functions-button" bindtap="showMoreMenu">
-            <image class="toolbar-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
-          </view>
-          
-          <!-- 输入框 -->
-          <view class="input-container">
-            <textarea class="message-textarea" placeholder="输入消息..." value="{{inputValue}}" bindinput="onInputChange" auto-height="true" maxlength="500" confirm-type="send" bindconfirm="sendMessage"></textarea>
-          </view>
-          
-          <!-- 表情按钮 -->
-          <view class="emoji-button" bindtap="showEmojiPicker">
-            <image class="toolbar-icon" src="/pages/images/个人详情.png" mode="aspectFit"></image>
-          </view>
+          <textarea class="message-textarea" placeholder="输入消息..." value="{{inputValue}}" bindinput="onInputChange" auto-height="true" maxlength="500" confirm-type="send" bindconfirm="sendMessage"></textarea>
         </view>
         
         <!-- 语音录制模式 -->
@@ -103,6 +90,15 @@
           </view>
         </view>
       </view>
+
+      
+      <!-- 右侧菜单按钮区域 -->
+      <view class="toolbar-right">
+        <!-- 更多功能按钮 -->
+        <view class="more-functions-button" bindtap="showMoreMenu">
+          <image class="toolbar-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
+        </view>
+      </view>
       
     </view>
     
@@ -110,12 +106,8 @@
     <view wx:if="{{showMoreMenu}}" class="more-menu">
       <view class="menu-grid">
         <view class="menu-item" bindtap="chooseImage">
-          <image class="menu-icon" src="/pages/images/视频.png" mode="aspectFit"></image>
+          <image class="menu-icon" src="/pages/images/图片.png" mode="aspectFit"></image>
           <text class="menu-text">图片</text>
-        </view>
-        <view class="menu-item" bindtap="chooseVideo">
-          <image class="menu-icon" src="/pages/images/视频.png" mode="aspectFit"></image>
-          <text class="menu-text">视频</text>
         </view>
         <view class="menu-item" bindtap="startVoiceCall">
           <image class="menu-icon" src="/pages/images/语音.png" mode="aspectFit"></image>
@@ -126,11 +118,11 @@
           <text class="menu-text">视频通话</text>
         </view>
         <view class="menu-item" bindtap="chooseFile">
-          <image class="menu-icon" src="/pages/images/更多.png" mode="aspectFit"></image>
+          <image class="menu-icon" src="/pages/images/文件.png" mode="aspectFit"></image>
           <text class="menu-text">文件</text>
         </view>
         <view class="menu-item" bindtap="shareLocation">
-          <image class="menu-icon" src="/pages/images/个人详情.png" mode="aspectFit"></image>
+          <image class="menu-icon" src="/pages/images/位置.png" mode="aspectFit"></image>
           <text class="menu-text">位置</text>
         </view>
       </view>

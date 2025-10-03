@@ -262,9 +262,11 @@
 .input-toolbar {
   display: flex;
   align-items: center;
-  padding: 16rpx 20rpx;
-  gap: 16rpx;
+  padding: 8rpx 16rpx; /* 减少垂直内边距 */
+  gap: 12rpx;
   background-color: #f7f7f7;
+  min-height: 88rpx; /* 确保工具栏高度一致 */
+  box-sizing: border-box;
 }
 
 .toolbar-left {
@@ -275,6 +277,15 @@
 .toolbar-right {
   display: flex;
   align-items: center;
+  gap: 8rpx; /* 减小按钮间距 */
+  margin-left: auto; /* 确保靠右对齐 */
+  padding-left: 8rpx;
+}
+
+.toolbar-emoji {
+  display: flex;
+  align-items: center;
+  padding-left: 8rpx;
 }
 
 /* 微信风格：中间输入区域 */
@@ -282,6 +293,7 @@
   flex: 1;
   display: flex;
   align-items: center;
+  max-width: calc(100% - 140rpx);
 }
 
 /* 文本输入模式 */
@@ -290,9 +302,12 @@
   display: flex;
   align-items: center;
   background-color: #ffffff;
-  border-radius: 40rpx;
+  border-radius: 36rpx; /* 统一圆角 */
   border: 1rpx solid #e0e0e0;
-  padding: 4rpx 12rpx;
+  padding: 0 16rpx; /* 移除垂直内边距，保持水平内边距 */
+  max-width: 100%; /* 移除宽度限制，让输入框尽可能宽 */
+  height: 72rpx; /* 固定高度，与语音按钮完全一致 */
+  box-sizing: border-box;
 }
 
 /* 更多功能按钮（微信风格：放在输入框左侧） */
@@ -311,44 +326,59 @@
   background-color: #f0f0f0;
 }
 
-/* 输入框容器 */
-.input-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
+/* 输入框样式 */
 .message-textarea {
   flex: 1;
-  min-height: 72rpx;
+  min-height: 68rpx; /* 稍微增加，确保在72rpx容器中垂直居中 */
   max-height: 180rpx;
-  padding: 16rpx 12rpx;
+  padding: 2rpx 0; /* 减少垂直内边距，确保在72rpx容器中垂直居中 */
   border: none;
   border-radius: 24rpx;
   font-size: 32rpx;
   background-color: transparent;
   line-height: 1.4;
   resize: none;
+  width: 100%;
 }
 
 .message-textarea:focus {
   outline: none;
 }
 
-/* 表情按钮（微信风格：放在输入框右侧） */
+/* 表情按钮（微信风格：放在最右侧） */
 .emoji-button {
-  width: 48rpx;
-  height: 48rpx;
+  width: 44rpx;
+  height: 44rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: 12rpx;
   border-radius: 50%;
+  background-color: #ffffff;
+  border: 1rpx solid #e0e0e0;
   transition: all 0.2s ease;
 }
 
 .emoji-button:active {
   background-color: #f0f0f0;
+  transform: scale(0.95);
+}
+
+/* 右侧工具栏按钮样式 */
+.more-functions-button {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #ffffff;
+  border: 1rpx solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.more-functions-button:active {
+  background-color: #f0f0f0;
+  transform: scale(0.95);
 }
 
 /* 语音输入模式 */
@@ -369,6 +399,7 @@
   border-radius: 36rpx;
   border: 1rpx solid #e0e0e0;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .voice-record-button:active {
@@ -378,12 +409,13 @@
 .record-button-text {
   font-size: 30rpx;
   color: #666666;
+  line-height: 1.2; /* 调整行高，在72rpx容器中垂直居中 */
 }
 
 /* 语音切换按钮 */
 .voice-button {
-  width: 56rpx;
-  height: 56rpx;
+  width: 60rpx;
+  height: 60rpx;
   display: flex;
   align-items: center;
   justify-content: center;

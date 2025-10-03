@@ -11,15 +11,15 @@
 /* 消息列表 - 无导航栏设计 */
 .message-list {
   flex: 1;
-  padding: 20rpx 0; /* 减少顶部padding，适配无导航栏 */
   background-color: #f5f5f5; /* 更现代的背景色 */
-  margin-bottom: 0; /* 确保不会被底部区域遮挡 */
+
+  box-sizing: border-box;
 }
 
 /* 消息容器 - 双容器布局 */
 .message-container {
   width: 100%;
-  margin-bottom: 32rpx; /* 微信风格：减少间距 */
+  margin-bottom: 40rpx; /* 增加间距，给sender-name留出空间 */
   box-sizing: border-box;
 }
 
@@ -29,6 +29,9 @@
   padding-right: 100rpx; /* 右边距，防止消息过长 */
   display: flex;
   justify-content: flex-start; /* 左对齐 */
+  align-items: flex-start; /* 顶部对齐 */
+  min-height: 140rpx; /* 增加最小高度 */
+  margin-bottom: 16rpx; /* 增加消息间距，给sender-name留出空间 */
 }
 
 /* 我方消息容器（右侧） - 微信风格 */
@@ -37,6 +40,8 @@
   padding-right: 30rpx;  /* 右边距，给头像空间 */
   display: flex;
   justify-content: flex-end; /* 右对齐 */
+  align-items: flex-start; /* 顶部对齐，保持与左侧一致 */
+  min-height: 140rpx; /* 增加最小高度，保持与左侧一致 */
 }
 
 /* 消息包装器 - 微信对称风格 */
@@ -82,6 +87,23 @@
   flex-direction: column;
   position: relative;
   max-width: calc(100% - 104rpx); /* 微信风格：头像80rpx + 间距24rpx */
+  min-height: 125rpx; /* 增加最小高度，让聊天容器更高一些 */
+  justify-content: flex-start; /* 顶部对齐，确保sender-name有空间 */
+  padding-top: 8rpx; /* 顶部内边距，给sender-name留出空间 */
+}
+
+/* 发送者名字 - 优化位置避免被容器隔断 */
+.sender-name {
+  font-size: 24rpx;
+  color: #666666;
+  margin-bottom: 12rpx; /* 增加下边距，确保与消息内容有合适间距 */
+  margin-left: 8rpx;
+  margin-top: 4rpx; /* 增加上边距，确保不会被挤压 */
+  line-height: 1.3; /* 增加行高，提高可读性 */
+  position: relative; /* 确保正常文档流 */
+  z-index: 10; /* 提高层级，避免被遮挡 */
+  flex-shrink: 0; /* 防止被压缩 */
+  min-height: 28rpx; /* 确保最小高度，避免显示不全 */
 }
 
 .message-content-left {
@@ -118,13 +140,14 @@
 
 /* 文本消息 */
 .message-bubble {
-  padding: 20rpx 24rpx;
+  padding: 24rpx 28rpx; /* 增加内边距，让容器看起来更高 */
   border-radius: 20rpx;
   position: relative;
   word-wrap: break-word;
   word-break: break-all;
   max-width: 100%;
   transition: all 0.2s ease;
+  min-height: 60rpx; /* 增加最小高度 */
 }
 
 .message-bubble:active {
@@ -158,12 +181,13 @@
 .voice-bubble {
   display: flex;
   align-items: center;
-  padding: 20rpx 24rpx;
+  padding: 24rpx 28rpx; /* 增加内边距，与文本气泡保持一致 */
   border-radius: 20rpx;
   min-width: 120rpx;
   max-width: 400rpx;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: 60rpx; /* 增加最小高度，与文本气泡保持一致 */
 }
 
 .voice-bubble-left {
@@ -227,10 +251,11 @@
 
 /* 图片消息 - 微信对称风格 */
 .image-bubble {
-  padding: 6rpx;
+  padding: 8rpx; /* 稍微增加内边距 */
   border-radius: 20rpx;
   overflow: hidden;
   transition: all 0.2s ease;
+  min-height: 60rpx; /* 增加最小高度，保持视觉一致性 */
 }
 
 .image-bubble-left {
@@ -255,7 +280,6 @@
 .bottom-area {
   background-color: #ffffff;
   border-top: 1rpx solid #e0e0e0;
-  padding-bottom: env(safe-area-inset-bottom); /* 适配全面屏 */
 }
 
 /* 微信风格输入工具栏 */

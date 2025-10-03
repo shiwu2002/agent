@@ -268,4 +268,20 @@ class VoiceRecorder {
   }
 }
 
-module.exports = VoiceRecorder;
+// 兼容微信小程序的模块导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = VoiceRecorder;
+} else if (typeof define === 'function' && define.amd) {
+  define(function() { return VoiceRecorder; });
+} else {
+  // 微信小程序环境
+  if (typeof VoiceRecorder !== 'undefined') {
+    // 全局导出，兼容小程序环境
+    if (typeof global !== 'undefined') {
+      global.VoiceRecorder = VoiceRecorder;
+    }
+    if (typeof window !== 'undefined') {
+      window.VoiceRecorder = VoiceRecorder;
+    }
+  }
+}

@@ -266,4 +266,20 @@ class WebSocketManager {
   }
 }
 
-module.exports = WebSocketManager;
+// 兼容微信小程序的模块导出
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = WebSocketManager;
+} else if (typeof define === 'function' && define.amd) {
+  define(function() { return WebSocketManager; });
+} else {
+  // 微信小程序环境
+  if (typeof WebSocketManager !== 'undefined') {
+    // 全局导出，兼容小程序环境
+    if (typeof global !== 'undefined') {
+      global.WebSocketManager = WebSocketManager;
+    }
+    if (typeof window !== 'undefined') {
+      window.WebSocketManager = WebSocketManager;
+    }
+  }
+}

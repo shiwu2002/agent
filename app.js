@@ -108,7 +108,7 @@ App({
     userInfo: null,
     token: null,
     openId: null,
-    URL: 'https://localhost:8080',
+    URL: 'http://localhost:8080',
     wsManager: null,
     voiceWSManager: null,
     videoWSManager: null

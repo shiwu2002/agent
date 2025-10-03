@@ -1,6 +1,13 @@
 // pages/MainInterface/MainInterface.js
 const WebSocketManager = require('../../utils/websocket.js');
-const VoiceRecorder = require('../../utils/voice-recorder.js');
+
+// 延迟加载VoiceRecorder以避免初始化错误
+let VoiceRecorder = null;
+try {
+  VoiceRecorder = require('../../utils/voice-recorder.js');
+} catch (e) {
+  console.warn('VoiceRecorder模块加载失败:', e);
+}
 
 Page({
 
@@ -109,6 +116,45 @@ Page({
     this.initWebSocket();
     this.initVoiceRecorder();
     this.loadHistoryMessages();
+  },
+
+  /**
+   * 初始化WebSocket连接
+   */
+  initWebSocket() {
+    console.log('初始化WebSocket连接');
+    // WebSocket初始化逻辑将在这里实现
+  },
+
+  /**
+   * 初始化语音录制器
+   */
+  initVoiceRecorder() {
+    console.log('初始化语音录制器');
+    if (VoiceRecorder) {
+      this.voiceRecorder = new VoiceRecorder({
+        onStart: () => {
+          console.log('录音开始');
+        },
+        onStop: (result) => {
+          console.log('录音停止', result);
+        },
+        onError: (error) => {
+          console.error('录音错误', error);
+        }
+      });
+      this.voiceRecorder.init();
+    } else {
+      console.warn('VoiceRecorder模块未加载，跳过初始化');
+    }
+  },
+
+  /**
+   * 加载历史消息
+   */
+  loadHistoryMessages() {
+    console.log('加载历史消息');
+    // 历史消息加载逻辑将在这里实现
   },
 
   /**

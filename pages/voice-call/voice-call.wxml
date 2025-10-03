@@ -60,6 +60,14 @@
         </view>
         <text class="control-label">键盘</text>
       </view>
+
+      <!-- 录音控制按钮 -->
+      <view class="control-item" bindtap="toggleRecording">
+        <view class="control-button {{recordingStatus === 'recording' ? 'recording-active' : ''}}">
+          <image class="control-icon" src="/pages/images/{{recordingStatus === 'recording' ? '语音撤回' : '语音'}}.png" mode="aspectFit"></image>
+        </view>
+        <text class="control-label">{{recordingStatus === 'recording' ? '停止录音' : '开始录音'}}</text>
+      </view>
     </view>
 
     <!-- 挂断按钮 -->

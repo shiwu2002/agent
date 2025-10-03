@@ -100,11 +100,11 @@ class VoiceRecorder {
 
       const options = {
         duration: this.maxDuration,
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        encodeBitRate: 48000,
-        format: 'mp3',
-        frameSize: 2
+        sampleRate: 16000, // 16kHz采样率，符合语音识别标准
+        numberOfChannels: 1, // 单声道
+        encodeBitRate: 128000, // 提高编码码率确保质量，128kbps
+        format: 'pcm', // PCM格式，16位量化，用于高质量音频传输
+        frameSize: 2 // 每帧2KB，约为125ms的音频数据
       };
 
       console.log('开始录音，参数:', options);

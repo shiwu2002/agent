@@ -47,6 +47,12 @@ class WebSocketManager {
         }
       });
 
+      // 设置binaryType为arraybuffer以支持二进制音频数据传输
+      if (this.socket) {
+        this.socket.binaryType = 'arraybuffer';
+        console.log('WebSocket binaryType已设置为arraybuffer');
+      }
+
       this.setupSocketEvents();
     } catch (error) {
       console.error('创建WebSocket连接异常:', error);
@@ -71,7 +77,9 @@ class WebSocketManager {
 
     // 收到消息
     this.socket.onMessage((message) => {
-      console.log('收到WebSocket消息:', message);
+      console.log('收到WebSocket消息，类型:', typeof message.data, '数据长度:', 
+        typeof message.data === 'string' ? message.data.length : 
+        message.data instanceof ArrayBuffer ? message.data.byteLength : 'unknown');
       
       // 添加消息类型检查和处理
       if (typeof message.data === 'string') {
@@ -106,6 +114,10 @@ class WebSocketManager {
         } catch (e) {
           // JSON解析失败，继续正常处理
         }
+      } else if (message.data instanceof ArrayBuffer) {
+        // 处理二进制音频数据
+        console.log('收到二进制音频数据，长度:', message.data.byteLength, '字节');
+        // 二进制数据直接传递给上层处理
       }
       
       this.onMessage(message);
@@ -135,7 +147,7 @@ class WebSocketManager {
   }
 
   /**
-   * 发送消息
+   * 发送消息 - 支持文本和二进制数据
    */
   send(data) {
     if (!this.isConnected || !this.socket) {
@@ -144,31 +156,73 @@ class WebSocketManager {
     }
 
     try {
-      // 如果是心跳消息，简化日志记录
-      if (data && (data.type === 'ping' || data.type === 'pong')) {
-        console.log(`发送心跳消息: ${data.type}`);
+      let sendData;
+      let logMessage = '';
+      
+      // 处理不同类型的数据
+      if (data instanceof ArrayBuffer) {
+        // 二进制音频数据（16位PCM）
+        sendData = data;
+        logMessage = `发送二进制音频数据: ${data.byteLength}字节 (${data.byteLength/2}个16位样本)`;
+        console.log(logMessage);
+      } else if (data instanceof Uint8Array) {
+        // Uint8Array二进制数据
+        sendData = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        logMessage = `发送Uint8Array二进制数据: ${data.length}字节`;
+        console.log(logMessage);
+      } else if (typeof data === 'string') {
+        // 字符串数据
+        sendData = data;
+        logMessage = data;
+        // 心跳消息简化日志
+        if (data === 'ping' || data === 'pong') {
+          console.log(`发送心跳消息: ${data}`);
+        } else {
+          console.log('发送WebSocket文本消息:', logMessage);
+        }
       } else {
-        const message = typeof data === 'string' ? data : JSON.stringify(data);
-        console.log('发送WebSocket消息:', message);
+        // JSON对象
+        sendData = JSON.stringify(data);
+        logMessage = sendData;
+        // 心跳消息简化日志
+        if (data && (data.type === 'ping' || data.type === 'pong')) {
+          console.log(`发送心跳消息: ${data.type}`);
+        } else {
+          console.log('发送WebSocket JSON消息:', logMessage);
+        }
       }
       
       this.socket.send({
-        data: typeof data === 'string' ? data : JSON.stringify(data),
+        data: sendData,
         success: () => {
-          if (data && (data.type === 'ping' || data.type === 'pong')) {
-            console.log(`心跳消息 ${data.type} 发送成功`);
+          if (data instanceof ArrayBuffer) {
+            console.log(`二进制音频数据发送成功: ${data.byteLength}字节`);
+          } else if (data instanceof Uint8Array) {
+            console.log(`Uint8Array数据发送成功: ${data.length}字节`);
+          } else if (typeof data === 'string') {
+            if (data === 'ping' || data === 'pong') {
+              console.log(`心跳消息 ${data} 发送成功`);
+            } else {
+              console.log('文本消息发送成功');
+            }
           } else {
-            console.log('消息发送成功');
+            console.log('JSON消息发送成功');
           }
         },
         fail: (error) => {
           console.error('消息发送失败:', error);
+          if (data instanceof ArrayBuffer) {
+            console.error(`二进制音频数据发送失败: ${data.byteLength}字节`, error);
+          }
         }
       });
       
       return true;
     } catch (error) {
       console.error('发送消息异常:', error);
+      if (data instanceof ArrayBuffer) {
+        console.error(`二进制音频数据发送异常: ${data.byteLength}字节`, error);
+      }
       return false;
     }
   }

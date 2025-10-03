@@ -204,14 +204,53 @@ Page({
   },
 
   /**
-   * 停止音频录制
+   * 停止录制PCM音频数据
    */
   stopAudioRecording() {
+    console.log('停止录制PCM音频数据');
+    
+    // 停止录音
+    const recorderManager = wx.getRecorderManager();
+    recorderManager.stop();
+    
+    // 通知服务器用户停止说话，可以开始处理并生成AI回复
+    const app = getApp();
+    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+      const endMessage = {
+        type: 'user_speaking_end',
+        senderId: this.data.localUserInfo.id,
+        targetId: this.data.targetUserId,
+        timestamp: Date.now()
+      };
+      
+      this.safeSendMessage(endMessage);
+    }
+    
+    this.setData({ recordingStatus: 'idle' });
+  },
+
+  /**
+   * 安全发送WebSocket消息（过滤心跳消息）
+   */
+  safeSendMessage(message) {
+    const app = getApp();
+    
+    if (!app.globalData.voiceWSManager || !app.globalData.voiceWSManager.isConnected) {
+      console.warn('WebSocket未连接，无法发送消息:', message);
+      return false;
+    }
+    
+    // 过滤心跳消息，不发送给AI处理
+    if (message && (message.type === 'ping' || message.type === 'pong')) {
+      console.log('心跳消息，不发送给AI处理:', message);
+      return true;
+    }
+    
     try {
-      wx.getRecorderManager().stop();
-      console.log('PCM音频录制停止');
+      return app.globalData.voiceWSManager.send(message);
     } catch (error) {
-      console.error('停止音频录制失败:', error);
+      console.error('发送WebSocket消息失败:', error);
+      return false;
     }
   },
 

@@ -79,7 +79,10 @@ class WebSocketManager {
         if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
             message.data.startsWith('处理失败:') || 
             message.data.startsWith('识别失败:') || 
-            message.data.startsWith('AI处理失败:')) {
+            message.data.startsWith('AI处理失败:') ||
+            message.data.startsWith('处理消息失败:') ||
+            message.data.includes('Cannot invoke') ||
+            message.data.includes('NullPointerException')) {
           console.error('服务器错误消息:', message.data);
           // 仍然传递给上层处理，但标记为错误类型
           const errorMessage = {
@@ -91,6 +94,17 @@ class WebSocketManager {
           };
           this.onMessage(errorMessage);
           return;
+        }
+        
+        // 检查是否为心跳消息，不传递给上层处理
+        try {
+          const data = JSON.parse(message.data);
+          if (data && (data.type === 'ping' || data.type === 'pong')) {
+            console.log('收到心跳消息，不传递给上层处理:', data.type);
+            return;
+          }
+        } catch (e) {
+          // JSON解析失败，继续正常处理
         }
       }
       
@@ -130,13 +144,22 @@ class WebSocketManager {
     }
 
     try {
-      const message = typeof data === 'string' ? data : JSON.stringify(data);
-      console.log('发送WebSocket消息:', message);
+      // 如果是心跳消息，简化日志记录
+      if (data && (data.type === 'ping' || data.type === 'pong')) {
+        console.log(`发送心跳消息: ${data.type}`);
+      } else {
+        const message = typeof data === 'string' ? data : JSON.stringify(data);
+        console.log('发送WebSocket消息:', message);
+      }
       
       this.socket.send({
-        data: message,
+        data: typeof data === 'string' ? data : JSON.stringify(data),
         success: () => {
-          console.log('消息发送成功');
+          if (data && (data.type === 'ping' || data.type === 'pong')) {
+            console.log(`心跳消息 ${data.type} 发送成功`);
+          } else {
+            console.log('消息发送成功');
+          }
         },
         fail: (error) => {
           console.error('消息发送失败:', error);

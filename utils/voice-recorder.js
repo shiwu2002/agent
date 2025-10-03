@@ -102,7 +102,7 @@ class VoiceRecorder {
         duration: this.maxDuration,
         sampleRate: 16000, // 16kHz采样率，符合语音识别标准
         numberOfChannels: 1, // 单声道
-        encodeBitRate: 128000, // 提高编码码率确保质量，128kbps
+        encodeBitRate: 64000, // 编码码率必须在24000-96000范围内，64kbps
         format: 'pcm', // PCM格式，16位量化，用于高质量音频传输
         frameSize: 2 // 每帧2KB，约为125ms的音频数据
       };

@@ -17,7 +17,7 @@ class WebSocketManager {
     this.reconnectAttempts = 0;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
-    this.heartbeatInterval = 30000; // 30秒心跳
+    this.heartbeatInterval = 25000; // 25秒心跳，符合API文档要求
   }
 
   /**
@@ -105,6 +105,12 @@ class WebSocketManager {
         }
         
         // 检查是否为心跳消息，不传递给上层处理
+        if (message.data === 'ping' || message.data === 'pong') {
+          console.log('收到心跳消息，不传递给上层处理:', message.data);
+          return;
+        }
+        
+        // 检查是否为JSON格式的心跳消息
         try {
           const data = JSON.parse(message.data);
           if (data && (data.type === 'ping' || data.type === 'pong')) {
@@ -147,7 +153,7 @@ class WebSocketManager {
   }
 
   /**
-   * 发送消息 - 支持文本和二进制数据
+   * 发送消息 - 支持文本和二进制数据，使用标准JSON格式（符合API文档要求）
    */
   send(data) {
     if (!this.isConnected || !this.socket) {
@@ -161,7 +167,7 @@ class WebSocketManager {
       
       // 处理不同类型的数据
       if (data instanceof ArrayBuffer) {
-        // 二进制音频数据（16位PCM）
+        // 二进制音频数据（16位PCM）直接发送 - 符合API文档要求
         sendData = data;
         logMessage = `发送二进制音频数据: ${data.byteLength}字节 (${data.byteLength/2}个16位样本)`;
         console.log(logMessage);
@@ -171,20 +177,27 @@ class WebSocketManager {
         logMessage = `发送Uint8Array二进制数据: ${data.length}字节`;
         console.log(logMessage);
       } else if (typeof data === 'string') {
-        // 字符串数据
+        // 字符串数据（心跳消息）
         sendData = data;
         logMessage = data;
-        // 心跳消息简化日志
         if (data === 'ping' || data === 'pong') {
           console.log(`发送心跳消息: ${data}`);
         } else {
           console.log('发送WebSocket文本消息:', logMessage);
         }
       } else {
-        // JSON对象
-        sendData = JSON.stringify(data);
+        // JSON对象 - 转换为标准格式（符合API文档要求）
+        const standardMessage = {
+          type: data.type || 'chat',
+          content: data.content || JSON.stringify(data),
+          messageId: data.messageId || `msg_${Date.now()}`,
+          userId: data.userId || 'system',
+          metadata: data.metadata || {}
+        };
+        
+        sendData = JSON.stringify(standardMessage);
         logMessage = sendData;
-        // 心跳消息简化日志
+        
         if (data && (data.type === 'ping' || data.type === 'pong')) {
           console.log(`发送心跳消息: ${data.type}`);
         } else {
@@ -192,30 +205,36 @@ class WebSocketManager {
         }
       }
       
-      this.socket.send({
-        data: sendData,
-        success: () => {
-          if (data instanceof ArrayBuffer) {
-            console.log(`二进制音频数据发送成功: ${data.byteLength}字节`);
-          } else if (data instanceof Uint8Array) {
-            console.log(`Uint8Array数据发送成功: ${data.length}字节`);
-          } else if (typeof data === 'string') {
-            if (data === 'ping' || data === 'pong') {
-              console.log(`心跳消息 ${data} 发送成功`);
+      // 在发送前进行最终的类型验证
+      if (sendData instanceof ArrayBuffer || typeof sendData === 'string') {
+        this.socket.send({
+          data: sendData,
+          success: () => {
+            if (data instanceof ArrayBuffer) {
+              console.log(`二进制音频数据发送成功: ${data.byteLength}字节`);
+            } else if (data instanceof Uint8Array) {
+              console.log(`Uint8Array数据发送成功: ${data.length}字节`);
+            } else if (typeof data === 'string') {
+              if (data === 'ping' || data === 'pong') {
+                console.log(`心跳消息 ${data} 发送成功`);
+              } else {
+                console.log('文本消息发送成功');
+              }
             } else {
-              console.log('文本消息发送成功');
+              console.log('JSON消息发送成功');
             }
-          } else {
-            console.log('JSON消息发送成功');
+          },
+          fail: (error) => {
+            console.error('消息发送失败:', error);
+            if (data instanceof ArrayBuffer) {
+              console.error(`二进制音频数据发送失败: ${data.byteLength}字节`, error);
+            }
           }
-        },
-        fail: (error) => {
-          console.error('消息发送失败:', error);
-          if (data instanceof ArrayBuffer) {
-            console.error(`二进制音频数据发送失败: ${data.byteLength}字节`, error);
-          }
-        }
-      });
+        });
+      } else {
+        console.error(`发送数据类型错误: ${typeof sendData}, 期望: ArrayBuffer或string`, sendData);
+        return false;
+      }
       
       return true;
     } catch (error) {
@@ -223,6 +242,94 @@ class WebSocketManager {
       if (data instanceof ArrayBuffer) {
         console.error(`二进制音频数据发送异常: ${data.byteLength}字节`, error);
       }
+      return false;
+    }
+  }
+
+  /**
+   * 发送二进制数据（专门用于音频数据）
+   */
+  sendBinary(binaryData) {
+    if (!this.isConnected || !this.socket) {
+      console.error('WebSocket未连接，无法发送二进制数据');
+      return false;
+    }
+
+    // 更详细的类型检查和转换
+    let processedData = binaryData;
+    
+    // 如果是字符串类型，尝试转换为ArrayBuffer
+    if (typeof binaryData === 'string') {
+      console.warn('接收到字符串类型的音频数据，尝试转换为ArrayBuffer...');
+      try {
+        // 假设是base64字符串，尝试解码
+        processedData = wx.base64ToArrayBuffer(binaryData);
+        console.log('Base64字符串转换成功，转换后长度:', processedData.byteLength);
+      } catch (error) {
+        console.error('字符串转换ArrayBuffer失败:', error);
+        return false;
+      }
+    }
+
+    // 微信小程序兼容的ArrayBuffer类型检查
+    const isArrayBuffer = processedData instanceof ArrayBuffer || 
+                         (processedData && 
+                          typeof processedData === 'object' && 
+                          typeof processedData.byteLength === 'number' &&
+                          processedData.constructor && 
+                          processedData.constructor.name === 'ArrayBuffer');
+    
+    const isUint8Array = processedData instanceof Uint8Array ||
+                        (processedData &&
+                         typeof processedData === 'object' &&
+                         typeof processedData.length === 'number' &&
+                         processedData.constructor &&
+                         processedData.constructor.name === 'Uint8Array');
+    
+    if (!isArrayBuffer && !isUint8Array) {
+      console.error('数据必须是ArrayBuffer或Uint8Array类型，当前类型:', {
+        type: typeof processedData,
+        constructor: processedData?.constructor?.name,
+        hasByteLength: typeof processedData?.byteLength,
+        hasLength: typeof processedData?.length,
+        isArrayBuffer: processedData instanceof ArrayBuffer,
+        isUint8Array: processedData instanceof Uint8Array
+      });
+      return false;
+    }
+
+    try {
+      let sendData;
+      let dataType;
+      
+      if (isArrayBuffer) {
+        sendData = processedData;
+        dataType = 'ArrayBuffer';
+        console.log(`发送二进制音频数据: ${processedData.byteLength}字节`);
+      } else if (isUint8Array) {
+        sendData = processedData.buffer.slice(processedData.byteOffset, processedData.byteOffset + processedData.byteLength);
+        dataType = 'Uint8Array';
+        console.log(`发送Uint8Array二进制数据: ${processedData.length}字节`);
+      } else {
+        // 兜底处理：尝试直接发送
+        console.warn('未知数据类型，尝试直接发送:', processedData);
+        sendData = processedData;
+        dataType = 'Unknown';
+      }
+      
+      this.socket.send({
+        data: sendData,
+        success: () => {
+          console.log(`${dataType}二进制数据发送成功`);
+        },
+        fail: (error) => {
+          console.error(`${dataType}二进制数据发送失败:`, error);
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('发送二进制数据异常:', error);
       return false;
     }
   }
@@ -285,10 +392,8 @@ class WebSocketManager {
     
     this.heartbeatTimer = setInterval(() => {
       if (this.isConnected) {
-        this.send({
-          type: 'ping',
-          timestamp: Date.now()
-        });
+        // 根据API文档，心跳消息可以是简单的字符串"ping"
+        this.send('ping');
       }
     }, this.heartbeatInterval);
   }
@@ -324,9 +429,9 @@ class WebSocketManager {
   }
 
   /**
-   * 是否已连接
+   * 获取连接状态属性
    */
-  isConnected() {
+  getConnectionStatus() {
     return this.isConnected;
   }
 

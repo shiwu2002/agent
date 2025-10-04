@@ -55,6 +55,9 @@ Page({
     
     // 初始化通话
     this.initCall();
+    
+    // 启动心跳机制（符合API文档要求：25秒间隔）
+    this.startHeartbeat();
   },
 
   /**
@@ -294,7 +297,9 @@ Page({
   },
 
   /**
-   * 开始音频录制 - 确保16位PCM、16000Hz、单声道格式
+   * 开始音频录制 - 严格按照更新后的API文档要求：16位PCM、16000Hz、单声道格式
+   * 用于实时语音通信，通过语音WebSocket发送
+   * 添加了音频数据质量保证和新的控制命令支持
    */
   startAudioRecording() {
     const app = getApp();
@@ -312,18 +317,22 @@ Page({
     }
     const recorderManager = this.data.recorderManager;
     
-    // 设置录音参数 - 严格按照16位PCM、16000Hz、单声道格式
+    // 根据API文档，发送用户开始说话通知
+    this.sendUserSpeakingStart();
+    
+    // 设置录音参数 - 严格按照API文档要求：16位PCM、16000Hz、单声道格式
     const recordingOptions = {
       duration: 60000, // 最长60秒
-      sampleRate: 16000, // 16kHz采样率，符合语音识别标准
-      numberOfChannels: 1, // 单声道
+      sampleRate: 16000, // 16kHz采样率，符合API文档要求
+      numberOfChannels: 1, // 单声道，符合API文档要求
       encodeBitRate: 64000, // 编码码率必须在24000-96000范围内，64kbps
-      format: 'pcm', // PCM格式，16位量化
+      format: 'pcm', // PCM格式，16位量化，符合API文档要求
       frameSize: 2 // 每帧2KB，约为125ms的音频数据
     };
     
-    console.log('开始16位PCM音频录制，参数:', recordingOptions);
+    console.log('开始实时语音通信音频录制，参数:', recordingOptions);
     console.log('音频格式确认: 16位PCM, 16000Hz, 单声道, 帧大小:', recordingOptions.frameSize, 'KB');
+    console.log('录音数据将通过语音WebSocket实时发送');
     
     // 监听录音帧数据事件（只设置一次，避免重复绑定）
     if (!this._frameListenerSet) {
@@ -332,11 +341,17 @@ Page({
       recorderManager.onFrameRecorded((res) => {
         const { frameBuffer } = res;
         
-        // 验证音频数据有效性 - 确保是16位PCM数据
+        // 音频数据质量保证 - 避免NO_VALID_AUDIO_ERROR错误（符合更新后的API文档要求）
         if (frameBuffer && frameBuffer.byteLength > 0) {
           // 验证数据格式：16位PCM数据应该是偶数个字节
           if (frameBuffer.byteLength % 2 !== 0) {
             console.warn('音频数据长度异常，不是16位PCM格式:', frameBuffer.byteLength);
+            return;
+          }
+          
+          // 避免发送过小的音频数据，防止NO_VALID_AUDIO_ERROR
+          if (frameBuffer.byteLength < 100) { // 假设最小有效音频帧为100字节
+            console.warn('音频帧数据过小，可能无效:', frameBuffer.byteLength);
             return;
           }
           
@@ -350,19 +365,19 @@ Page({
           const sampleCount = frameBuffer.byteLength / 2; // 16位 = 2字节/样本
           const durationMs = (sampleCount / 16000) * 1000; // 16000Hz采样率
           
-          console.log(`音频帧#${this.data.audioSequence}: 长度=${frameBuffer.byteLength}字节, 样本数=${sampleCount}, 时长=${durationMs.toFixed(1)}ms, 音频级别=${audioLevel.toFixed(4)}`);
+          console.log(`实时语音通信音频帧#${this.data.audioSequence}: 长度=${frameBuffer.byteLength}字节, 样本数=${sampleCount}, 时长=${durationMs.toFixed(1)}ms, 音频级别=${audioLevel.toFixed(4)}`);
           
           // 如果音频级别足够高，认为有语音活动
           if (audioLevel > 0.001) {
             this._lastVoiceActivity = Date.now();
             
-            // 发送16位PCM音频数据到服务器
+            // 通过语音WebSocket发送16位PCM音频数据（符合API文档要求）
             if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-              console.log('发送16位PCM音频数据帧到服务器');
+              console.log('通过语音WebSocket发送16位PCM音频数据帧');
               
-              // 直接发送二进制PCM数据（ArrayBuffer）
+              // 直接发送二进制PCM数据（ArrayBuffer）到语音WebSocket
               const sendResult = app.globalData.voiceWSManager.send(frameBuffer);
-              console.log('PCM数据发送结果:', sendResult ? '成功' : '失败', '数据长度:', frameBuffer.byteLength);
+              console.log('PCM数据通过语音WebSocket发送结果:', sendResult ? '成功' : '失败', '数据长度:', frameBuffer.byteLength);
               
               // 每10帧发送一次元数据用于调试（减少网络开销）
               if (this.data.audioSequence % 10 === 0) {
@@ -383,16 +398,18 @@ Page({
                 console.log('发送音频元数据:', audioMeta);
               }
             } else {
-              console.warn('WebSocket未连接，无法发送音频数据');
+              console.warn('语音WebSocket未连接，无法发送实时音频数据');
             }
           } else {
-            // 静音帧，偶尔发送以保持连接
+            // 静音帧，偶尔发送以保持连接（符合API文档要求）
             if (this.data.audioSequence % 50 === 0) {
               console.log('检测到静音帧，音频级别:', audioLevel.toFixed(4));
+              // 可以发送静音数据以保持连接活跃
+              this.sendSilentFrame();
             }
           }
         } else {
-          console.warn('收到空音频帧数据');
+          console.warn('收到空音频帧数据，可能导致NO_VALID_AUDIO_ERROR');
         }
       });
       
@@ -439,7 +456,7 @@ Page({
   },
 
   /**
-   * 停止录制PCM音频数据
+   * 停止录制PCM音频数据（符合更新后的API文档规范）
    */
   stopAudioRecording() {
     console.log('停止录制PCM音频数据');
@@ -456,19 +473,8 @@ Page({
       recorderManager.stop();
       console.log('已调用recorderManager.stop()停止录音');
       
-      // 通知服务器用户停止说话，可以开始处理并生成AI回复
-      const app = getApp();
-      if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-        const endMessage = {
-          type: 'user_speaking_end',
-          senderId: this.data.localUserInfo.id,
-          targetId: this.data.targetUserId,
-          timestamp: Date.now()
-        };
-        
-        this.safeSendMessage(endMessage);
-        console.log('已发送用户停止说话通知');
-      }
+      // 根据API文档，发送用户结束说话通知
+      this.sendUserSpeakingEnd();
       
       this.setData({ recordingStatus: 'processing' });
       
@@ -645,13 +651,25 @@ Page({
   },
 
   /**
-   * 安全发送WebSocket消息（过滤心跳消息）
+   * 安全发送WebSocket消息到语音WebSocket（符合API文档要求）
+   * 专门用于实时语音通信的消息发送
    */
   safeSendMessage(message) {
     const app = getApp();
     
-    if (!app.globalData.voiceWSManager || !app.globalData.voiceWSManager.isConnected) {
-      console.warn('WebSocket未连接，无法发送消息:', message);
+    // 验证语音WebSocket连接状态
+    if (!app.globalData.voiceWSManager) {
+      console.error('语音WebSocket管理器未初始化');
+      this.setData({ callStatus: 'disconnected' });
+      return false;
+    }
+    
+    if (!app.globalData.voiceWSManager.isConnected) {
+      console.warn('语音WebSocket未连接，无法发送消息:', message);
+      this.setData({ callStatus: 'reconnecting' });
+      
+      // 尝试重新连接
+      this.initVoiceWebSocket();
       return false;
     }
     
@@ -662,9 +680,16 @@ Page({
     }
     
     try {
-      return app.globalData.voiceWSManager.send(message);
+      const result = app.globalData.voiceWSManager.send(message);
+      if (result) {
+        console.log('消息通过语音WebSocket发送成功:', message.type || 'unknown_type');
+      } else {
+        console.error('消息通过语音WebSocket发送失败');
+      }
+      return result;
     } catch (error) {
       console.error('发送WebSocket消息失败:', error);
+      this.setData({ callStatus: 'error' });
       return false;
     }
   },
@@ -843,6 +868,29 @@ Page({
   },
 
   /**
+   * 发送静音帧以保持连接活跃（符合API文档要求）
+   */
+  sendSilentFrame() {
+    // 创建一小段静音PCM数据（16位，16kHz，单声道）
+    const silentDuration = 0.1; // 100ms
+    const sampleCount = Math.floor(silentDuration * 16000); // 16kHz采样率
+    const silentFrame = new ArrayBuffer(sampleCount * 2); // 16位 = 2字节/样本
+    
+    // 填充静音数据（零值）
+    const dataView = new DataView(silentFrame);
+    for (let i = 0; i < sampleCount; i++) {
+      dataView.setInt16(i * 2, 0, true); // 零值表示静音
+    }
+    
+    // 发送静音帧
+    const app = getApp();
+    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+      app.globalData.voiceWSManager.send(silentFrame);
+      console.log('发送静音帧以保持连接活跃，长度:', silentFrame.byteLength, '字节');
+    }
+  },
+
+  /**
    * 处理AI回复文本
    */
   handleAIReply(text) {
@@ -853,17 +901,48 @@ Page({
     
     // 这里可以添加文本到语音的逻辑，如果后端没有自动进行TTS合成
     // 或者可以发送请求让后端进行TTS合成
-    const app = getApp();
-    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
-      const ttsRequest = {
-        type: 'tts_request',
-        text: text,
-        senderId: this.data.localUserInfo.id,
-        targetUserId: this.data.targetUserId,
-        timestamp: Date.now()
-      };
-      
-      this.safeSendMessage(ttsRequest);
+    const ttsRequest = {
+      type: 'tts_request',
+      text: text,
+      senderId: this.data.localUserInfo.id,
+      targetUserId: this.data.targetUserId,
+      timestamp: Date.now()
+    };
+    
+    this.safeSendMessage(ttsRequest);
+  },
+
+  /**
+   * 发送用户开始说话通知（符合更新后的API文档要求）
+   */
+  sendUserSpeakingStart() {
+    const startMessage = {
+      type: 'user_speaking_start',
+      senderId: this.data.localUserInfo.id,
+      targetUserId: this.data.targetUserId,
+      timestamp: Date.now()
+    };
+    
+    const sendResult = this.safeSendMessage(startMessage);
+    if (sendResult) {
+      console.log('已发送用户开始说话通知（符合API文档）:', startMessage);
+    }
+  },
+
+  /**
+   * 发送用户结束说话通知（符合更新后的API文档要求）
+   */
+  sendUserSpeakingEnd() {
+    const endMessage = {
+      type: 'user_speaking_end',
+      senderId: this.data.localUserInfo.id,
+      targetUserId: this.data.targetUserId,
+      timestamp: Date.now()
+    };
+    
+    const sendResult = this.safeSendMessage(endMessage);
+    if (sendResult) {
+      console.log('已发送用户结束说话通知（符合API文档）:', endMessage);
     }
   },
 
@@ -928,7 +1007,8 @@ Page({
   },
 
   /**
-   * 初始化语音WebSocket连接
+   * 初始化语音WebSocket连接（符合API文档要求）
+   * 专门用于实时语音通信
    */
   initVoiceWebSocket() {
     const app = getApp();
@@ -936,25 +1016,55 @@ Page({
     
     const WebSocketManager = require('../../utils/websocket.js');
     
+    // 如果已经存在语音WebSocket管理器且已连接，直接使用
+    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+      console.log('语音WebSocket已连接，直接使用现有连接');
+      this.setupWebSocketListeners();
+      return app.globalData.voiceWSManager;
+    }
+    
     const voiceWSManager = new WebSocketManager({
       url: `ws://localhost:8080/ws/voice?userId=${userId}`,
       onOpen: () => {
         console.log('语音通话页面WebSocket连接成功');
+        this.setData({ callStatus: 'connected' });
         this.setupWebSocketListeners();
-        // 发送认证信息
-        voiceWSManager.send({
-          type: 'auth',
-          userId: this.data.localUserInfo.id,
-          targetUserId: this.data.targetUserId,
-          service: 'voice'
-        });
+        
+        // 发送认证信息到语音WebSocket（符合API文档要求）- 使用标准JSON格式
+        const authMessage = {
+          type: 'chat',
+          content: JSON.stringify({
+            type: 'auth',
+            userId: this.data.localUserInfo.id || userId,
+            targetUserId: this.data.targetUserId,
+            service: 'voice',
+            timestamp: Date.now()
+          }),
+          messageId: `auth_${Date.now()}`,
+          userId: this.data.localUserInfo.id || userId,
+          metadata: {
+            authType: 'voice_service',
+            service: 'voice',
+            timestamp: Date.now()
+          }
+        };
+        
+        console.log('发送语音服务认证信息（标准格式）:', authMessage);
+        voiceWSManager.send(authMessage);
+        
+        // 根据API文档，发送心跳消息以保持连接
+        this.startHeartbeat();
       },
       onMessage: this.handleVoiceMessage.bind(this),
       onClose: () => {
         console.log('语音通话页面WebSocket连接关闭');
+        this.setData({ callStatus: 'disconnected' });
+        this.stopHeartbeat();
       },
       onError: (error) => {
         console.error('语音通话页面WebSocket错误:', error);
+        this.setData({ callStatus: 'error' });
+        this.stopHeartbeat();
         wx.showToast({
           title: '语音连接失败',
           icon: 'none'
@@ -966,6 +1076,8 @@ Page({
 
     app.globalData.voiceWSManager = voiceWSManager;
     voiceWSManager.connect();
+    
+    return voiceWSManager;
   },
 
   /**
@@ -1119,6 +1231,7 @@ Page({
    */
   onUnload() {
     this.stopAudioRecording();
+    this.stopHeartbeat();
   },
 
   /**
@@ -1245,6 +1358,311 @@ Page({
       this.handleJSONMessage(data);
     } catch (e) {
       console.log('收到纯文本消息:', textData);
+    }
+  },
+
+  /**
+   * 设置WebSocket监听器（符合API文档要求）
+   * 专门用于实时语音通信的WebSocket消息处理
+   */
+  setupWebSocketListeners() {
+    const app = getApp();
+    
+    // 如果语音WebSocket未连接，先连接
+    if (!app.globalData.voiceWSManager || !app.globalData.voiceWSManager.isConnected) {
+      console.warn('语音WebSocket未连接，尝试重新连接...');
+      this.initVoiceWebSocket();
+      return;
+    }
+    
+    // 监听语音WebSocket消息
+    if (app.globalData.voiceWSManager) {
+      // 保存原始回调函数引用
+      const originalOnMessage = app.globalData.voiceWSManager.onMessage;
+      const originalOnOpen = app.globalData.voiceWSManager.onOpen;
+      const originalOnClose = app.globalData.voiceWSManager.onClose;
+      const originalOnError = app.globalData.voiceWSManager.onError;
+      
+      // 设置消息处理回调
+      app.globalData.voiceWSManager.onMessage = (message) => {
+        console.log('语音WebSocket收到消息，类型:', typeof message.data, '长度:', 
+          typeof message.data === 'string' ? message.data.length : 
+          message.data instanceof ArrayBuffer ? message.data.byteLength : 'unknown');
+        
+        // 处理收到的消息
+        this.handleWebSocketMessage(message);
+        
+        // 调用原始回调（如果存在）
+        if (originalOnMessage) {
+          originalOnMessage(message);
+        }
+      };
+      
+      // 设置连接成功回调
+      app.globalData.voiceWSManager.onOpen = () => {
+        console.log('语音通话WebSocket连接已建立');
+        this.setData({ callStatus: 'connected' });
+        
+        // 调用原始回调（如果存在）
+        if (originalOnOpen) {
+          originalOnOpen();
+        }
+      };
+      
+      // 设置连接关闭回调
+      app.globalData.voiceWSManager.onClose = () => {
+        console.log('语音通话WebSocket连接已关闭');
+        this.setData({ callStatus: 'disconnected' });
+        
+        // 调用原始回调（如果存在）
+        if (originalOnClose) {
+          originalOnClose();
+        }
+      };
+      
+      // 设置连接错误回调
+      app.globalData.voiceWSManager.onError = (error) => {
+        console.error('语音通话WebSocket错误:', error);
+        this.setData({ callStatus: 'error' });
+        
+        // 调用原始回调（如果存在）
+        if (originalOnError) {
+          originalOnError(error);
+        }
+      };
+      
+      console.log('语音WebSocket监听器设置完成');
+    }
+  },
+
+  /**
+   * 处理JSON格式的消息（实时语音通信控制消息）
+   */
+  handleJSONMessage(data) {
+    if (!data || !data.type) return;
+    
+    switch (data.type) {
+      case 'voice_call_answer':
+        // 对方接听通话
+        console.log('对方已接听语音通话');
+        this.setData({ callStatus: 'connected' });
+        break;
+        
+      case 'voice_call_end':
+        // 通话结束
+        console.log('语音通话结束');
+        this.handleCallEnd();
+        break;
+        
+      case 'user_speaking_start':
+        // 其他用户开始说话
+        console.log('对方开始说话');
+        this.setData({ isRemoteSpeaking: true });
+        break;
+        
+      case 'user_speaking_end':
+        // 其他用户停止说话
+        console.log('对方停止说话');
+        this.setData({ isRemoteSpeaking: false });
+        break;
+        
+      case 'ai_processing_start':
+        // AI开始处理语音
+        console.log('AI开始处理语音');
+        this.setData({ isProcessingAI: true });
+        wx.showToast({
+          title: '正在处理...',
+          icon: 'loading',
+          duration: 2000
+        });
+        break;
+        
+      case 'ai_processing_end':
+        // AI处理完成
+        console.log('AI处理完成');
+        this.setData({ isProcessingAI: false });
+        wx.hideToast();
+        break;
+        
+      case 'asr_result':
+        // 语音识别结果
+        console.log('收到语音识别结果:', data);
+        if (data.status === 'success' && data.data) {
+          console.log('语音识别成功:', data.data);
+        }
+        break;
+        
+      case 'asr_error':
+        // 语音识别错误
+        console.error('收到语音识别错误:', data);
+        let errorMessage = '语音识别失败';
+        if (data.message) {
+          if (data.message.includes('NO_VALID_AUDIO_ERROR')) {
+            errorMessage = '音频数据无效，请重新录音';
+          } else {
+            errorMessage = data.message;
+          }
+        }
+        
+        wx.showToast({
+          title: errorMessage,
+          icon: 'none',
+          duration: 3000
+        });
+        break;
+        
+      case 'error':
+        // 错误消息
+        console.error('收到错误消息:', data.message);
+        this.setData({ callStatus: 'error' });
+        
+        let errorMsg = data.message || '处理失败';
+        if (data.message && data.message.includes('NO_VALID_AUDIO_ERROR')) {
+          errorMsg = '音频数据无效，请重新录音';
+        }
+        
+        wx.showToast({
+          title: errorMsg,
+          icon: 'none'
+        });
+        break;
+        
+      default:
+        console.log('收到未知类型的JSON消息:', data.type, data);
+    }
+  },
+
+  /**
+   * 处理AI回复文本
+   */
+  handleAIReply(text) {
+    console.log('处理AI回复:', text);
+    
+    // 显示AI回复文本
+    this.setData({ aiReplyText: text });
+    
+    // 这里可以添加文本到语音的逻辑，如果后端没有自动进行TTS合成
+    // 或者可以发送请求让后端进行TTS合成
+    const ttsRequest = {
+      type: 'tts_request',
+      text: text,
+      senderId: this.data.localUserInfo.id,
+      targetUserId: this.data.targetUserId,
+      timestamp: Date.now()
+    };
+    
+    this.safeSendMessage(ttsRequest);
+  },
+
+  /**
+   * 挂断通话（符合更新后的API文档要求）
+   * 发送语音通话结束消息到服务器
+   */
+  hangUp() {
+    wx.showModal({
+      title: '结束通话',
+      content: '确定要结束通话吗？',
+      success: (res) => {
+        if (res.confirm) {
+          this.endCall();
+        }
+      }
+    });
+  },
+
+  /**
+   * 结束通话（符合更新后的API文档要求）
+   * 按照新的API文档格式发送语音通话结束消息
+   */
+  endCall() {
+    console.log('正在结束语音通话，按照新的API文档格式发送结束消息');
+    
+    // 根据新的API文档，发送语音通话结束消息
+    const app = getApp();
+    if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+      const endCallMessage = {
+        type: 'voice_call_end',
+        targetUserId: this.data.targetUserId,
+        timestamp: Date.now()
+      };
+      
+      const sendResult = app.globalData.voiceWSManager.send(endCallMessage);
+      if (sendResult) {
+        console.log('已发送语音通话结束消息（符合新API文档）:', endCallMessage);
+      } else {
+        console.warn('发送语音通话结束消息失败');
+      }
+    } else {
+      console.warn('语音WebSocket未连接，无法发送通话结束消息');
+    }
+
+    // 停止音频录制
+    this.stopAudioRecording();
+    
+    // 停止通话计时
+    this.stopCallTimer();
+    
+    // 延迟返回上一页
+    setTimeout(() => {
+      wx.navigateBack({
+        delta: 1
+      });
+    }, 1000);
+  },
+
+  /**
+   * 处理通话结束（接收服务器通知）
+   */
+  handleCallEnd() {
+    console.log('处理通话结束（接收服务器通知）');
+    this.setData({ callStatus: 'disconnected' });
+    
+    wx.showToast({
+      title: '通话已结束',
+      icon: 'none'
+    });
+    
+    // 延迟返回上一页
+    setTimeout(() => {
+      wx.navigateBack({
+        delta: 1
+      });
+    }, 1000);
+  }
+
+  /**
+   * 启动心跳机制（符合API文档要求：25秒间隔）
+   */
+  startHeartbeat() {
+    this.stopHeartbeat();
+    
+    this.heartbeatTimer = setInterval(() => {
+      const app = getApp();
+      if (app.globalData.voiceWSManager && app.globalData.voiceWSManager.isConnected) {
+        // 发送心跳消息（纯文本格式）
+        const heartbeatMessage = 'ping';
+        const sendResult = app.globalData.voiceWSManager.send(heartbeatMessage);
+        
+        if (sendResult) {
+          console.log('心跳消息发送成功（25秒间隔）:', heartbeatMessage);
+          this.setData({ lastHeartbeatTime: Date.now() });
+        } else {
+          console.warn('心跳消息发送失败');
+        }
+      }
+    }, 25000); // 25秒间隔，符合API文档要求
+    
+    console.log('心跳机制已启动（25秒间隔）');
+  }
+
+  /**
+   * 停止心跳机制
+   */
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      console.log('心跳机制已停止');
     }
   }
 })

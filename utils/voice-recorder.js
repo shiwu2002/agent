@@ -98,16 +98,18 @@ class VoiceRecorder {
         return;
       }
 
+      // 严格按照API文档要求：16位PCM、16000Hz、单声道格式
       const options = {
         duration: this.maxDuration,
-        sampleRate: 16000, // 16kHz采样率，符合语音识别标准
-        numberOfChannels: 1, // 单声道
+        sampleRate: 16000, // 16kHz采样率，符合API文档要求
+        numberOfChannels: 1, // 单声道，符合API文档要求
         encodeBitRate: 64000, // 编码码率必须在24000-96000范围内，64kbps
-        format: 'pcm', // PCM格式，16位量化，用于高质量音频传输
-        frameSize: 2 // 每帧2KB，约为125ms的音频数据
+        format: 'pcm', // PCM格式，16位量化，符合API文档要求
+        frameSize: 2 // 每帧2KB，约为125ms的音频数据，用于实时传输
       };
 
-      console.log('开始录音，参数:', options);
+      console.log('开始录音，生成16位PCM音频数据，参数:', options);
+      console.log('音频格式确认: 16位PCM, 16000Hz, 单声道, 帧大小:', options.frameSize, 'KB');
       
       this.recorderManager.start(options);
     }).catch((error) => {

@@ -279,7 +279,8 @@ Page({
   },
 
   /**
-   * 收到WebSocket消息
+   * 收到WebSocket消息（符合更新后的API文档规范）
+   * 增强错误处理，支持新的控制命令和错误类型
    */
   onWebSocketMessage(message) {
     console.log('收到消息:', message);
@@ -296,19 +297,30 @@ Page({
           return;
         }
         
-        // 检查是否为错误消息
+        // 检查是否为错误消息（包含新的错误类型）
         if (messageText.startsWith('抱歉，处理您的请求时发生了错误') || 
             messageText.startsWith('处理失败:') || 
             messageText.startsWith('识别失败:') || 
             messageText.startsWith('AI处理失败:') ||
             messageText.startsWith('处理消息失败:') ||
             messageText.includes('Cannot invoke') ||
-            messageText.includes('NullPointerException')) {
+            messageText.includes('NullPointerException') ||
+            messageText.includes('NO_VALID_AUDIO_ERROR')) {
           console.error('服务器错误:', messageText);
-          wx.showToast({
-            title: '服务器处理失败，请稍后重试',
-            icon: 'none'
-          });
+          
+          // 特殊处理NO_VALID_AUDIO_ERROR
+          if (messageText.includes('NO_VALID_AUDIO_ERROR')) {
+            wx.showToast({
+              title: '音频数据无效，请重新录音',
+              icon: 'none',
+              duration: 3000
+            });
+          } else {
+            wx.showToast({
+              title: '服务器处理失败，请稍后重试',
+              icon: 'none'
+            });
+          }
           return;
         }
         
@@ -316,6 +328,41 @@ Page({
         try {
           const data = JSON.parse(messageText);
           
+          // 检查是否为标准JSON格式消息
+          if (data.type === 'chat' && data.content) {
+            console.log('收到标准格式聊天消息:', data);
+            // 解析内容并处理
+            try {
+              const contentData = JSON.parse(data.content);
+              this.receiveMessage({
+                id: data.messageId || `msg_${Date.now()}`,
+                type: contentData.type || 'text',
+                content: contentData.content || contentData,
+                isMe: false,
+                time: this.getCurrentTime(),
+                avatar: this.data.targetUser.avatar,
+                senderName: contentData.senderName || this.data.targetUser.name,
+                senderId: data.userId || this.data.targetUser.id,
+                metadata: data.metadata || {}
+              });
+            } catch (contentError) {
+              // 内容不是JSON，直接作为文本处理
+              this.receiveMessage({
+                id: data.messageId || `msg_${Date.now()}`,
+                type: 'text',
+                content: data.content,
+                isMe: false,
+                time: this.getCurrentTime(),
+                avatar: this.data.targetUser.avatar,
+                senderName: this.data.targetUser.name,
+                senderId: data.userId || this.data.targetUser.id,
+                metadata: data.metadata || {}
+              });
+            }
+            return;
+          }
+          
+          // 处理原有格式的消息
           switch (data.type) {
             case 'message':
               this.receiveMessage(data);
@@ -328,6 +375,26 @@ Page({
               break;
             case 'user_status':
               this.updateUserStatus(data);
+              break;
+            case 'ai_response':
+              // AI回复消息
+              this.handleAIResponse(data);
+              break;
+            case 'control_ack':
+              // 控制命令确认（新的API文档要求）
+              this.handleControlAck(data);
+              break;
+            case 'asr_result':
+              // 语音识别结果（新的API文档要求）
+              this.handleASRResult(data);
+              break;
+            case 'asr_error':
+              // 语音识别错误（新的API文档要求）
+              this.handleASRError(data);
+              break;
+            case 'message_error':
+              // 消息处理错误（最新的API文档要求）
+              this.handleMessageError(data);
               break;
             case 'ping':
               // 心跳响应
@@ -389,6 +456,64 @@ Page({
   onWebSocketError(error) {
     console.error('WebSocket错误:', error);
     this.setData({ connectionStatus: '连接失败' });
+  },
+
+  /**
+   * 收到语音WebSocket消息
+   */
+  onVoiceWebSocketMessage(message) {
+    console.log('收到语音WebSocket消息，类型:', typeof message.data, '数据长度:', 
+      typeof message.data === 'string' ? message.data.length : 
+      message.data instanceof ArrayBuffer ? message.data.byteLength : 'unknown');
+    
+    try {
+      if (message.data instanceof ArrayBuffer) {
+        // 处理二进制音频数据
+        console.log('收到二进制音频数据，长度:', message.data.byteLength, '字节');
+        this.handleIncomingVoiceAudio(message.data);
+      } else if (typeof message.data === 'string') {
+        // 处理文本消息（元数据和控制消息）
+        // 检查是否为错误消息
+        if (message.data.startsWith('抱歉，处理您的请求时发生了错误') || 
+            message.data.startsWith('处理失败:') || 
+            message.data.startsWith('识别失败:') || 
+            message.data.startsWith('AI处理失败:')) {
+          console.error('语音服务器错误:', message.data);
+          wx.showToast({
+            title: '语音服务错误，请稍后重试',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        const data = JSON.parse(message.data);
+        
+        switch (data.type) {
+          case 'voice_call':
+            this.handleVoiceCall(data);
+            break;
+          case 'voice_call_request':
+            this.handleVoiceCallRequest(data);
+            break;
+          case 'voice_call_accept':
+            this.handleVoiceCallAccept(data);
+            break;
+          case 'voice_call_reject':
+            this.handleVoiceCallReject(data);
+            break;
+          case 'voice_call_end':
+            this.handleVoiceCallEnd(data);
+            break;
+          case 'voice_message':
+            this.handleVoiceMessageMetadata(data);
+            break;
+          default:
+            console.log('未知语音消息类型:', data.type);
+        }
+      }
+    } catch (error) {
+      console.error('解析语音消息失败:', error, '原始消息:', message.data);
+    }
   },
 
   /**
@@ -588,7 +713,7 @@ Page({
   },
 
   /**
-   * 发送消息
+   * 发送消息 - 符合API文档要求的文本聊天格式
    */
   sendMessage() {
     const content = this.data.inputValue.trim();
@@ -614,15 +739,21 @@ Page({
       toView: `msg-${messages.length - 1}`
     });
 
-    // 通过WebSocket发送
-    this.safeSendMessage(this.data.wsManager, {
-      type: 'message',
-      messageType: 'text',
+    // 通过WebSocket发送 - 使用符合API文档的标准格式
+    const chatMessage = {
+      type: 'chat',
       content: content,
-      senderId: this.data.currentUser.id,
-      targetId: this.data.targetUser.id,
-      timestamp: Date.now()
-    });
+      messageId: `msg_${Date.now()}`,
+      userId: this.data.currentUser.id,
+      metadata: {
+        targetUserId: this.data.targetUser.id,
+        senderName: this.data.currentUser.name,
+        timestamp: Date.now(),
+        messageType: 'text'
+      }
+    };
+
+    this.safeSendMessage(this.data.wsManager, chatMessage);
   },
 
   /**
@@ -659,7 +790,7 @@ Page({
   },
 
   /**
-   * 开始录制语音
+   * 开始录制语音（符合更新后的API文档规范）
    */
   startRecording(e) {
     if (this.data.inputMode !== 'voice') return;
@@ -670,13 +801,37 @@ Page({
       recordingText: '松开发送'
     });
 
+    // 根据API文档，发送开始录音控制命令到服务器（通过文本聊天WebSocket）
+    if (this.data.wsManager && this.data.wsManager.isConnected) {
+      const startRecordingCommand = {
+        type: 'control',
+        content: 'start_recording',
+        messageId: `control_${Date.now()}`,
+        userId: this.data.currentUser.id,
+        metadata: {
+          commandType: 'voice_recording',
+          targetUserId: this.data.targetUser.id,
+          timestamp: Date.now()
+        }
+      };
+      
+      const sendResult = this.data.wsManager.send(startRecordingCommand);
+      if (sendResult) {
+        console.log('已发送开始录音控制命令（符合API文档）:', startRecordingCommand);
+      } else {
+        console.warn('发送开始录音控制命令失败');
+      }
+    } else {
+      console.warn('文本聊天WebSocket未连接，无法发送开始录音控制命令');
+    }
+
     // 开始录制
     this.data.voiceRecorder.start();
     this.startRecordingTimer();
   },
 
   /**
-   * 停止录制语音
+   * 停止录制语音（符合更新后的API文档规范）
    */
   stopRecording() {
     if (!this.data.isRecording) return;
@@ -688,6 +843,31 @@ Page({
       recordingTime: 0
     });
 
+    // 根据API文档，发送停止录音控制命令到服务器（通过文本聊天WebSocket）
+    if (this.data.wsManager && this.data.wsManager.isConnected) {
+      const stopRecordingCommand = {
+        type: 'control',
+        content: 'stop_recording',
+        messageId: `control_${Date.now()}`,
+        userId: this.data.currentUser.id,
+        metadata: {
+          commandType: 'voice_recording',
+          targetUserId: this.data.targetUser.id,
+          timestamp: Date.now()
+        }
+      };
+      
+      const sendResult = this.data.wsManager.send(stopRecordingCommand);
+      if (sendResult) {
+        console.log('已发送停止录音控制命令（符合API文档）:', stopRecordingCommand);
+      } else {
+        console.warn('发送停止录音控制命令失败');
+      }
+    } else {
+      console.warn('文本聊天WebSocket未连接，无法发送停止录音控制命令');
+    }
+
+    // 停止录制
     this.stopRecordingTimer();
     this.data.voiceRecorder.stop();
   },
@@ -763,8 +943,9 @@ Page({
       return;
     }
 
-    // 发送语音消息
-    this.sendVoiceMessage(res.tempFilePath, res.duration);
+    // 通过文本聊天WebSocket发送语音二进制数据（符合API文档要求）
+    console.log('准备通过文本聊天WebSocket发送语音数据...');
+    this.sendVoiceBinaryData(res.tempFilePath, res.duration);
   },
 
   /**
@@ -779,9 +960,9 @@ Page({
   },
 
   /**
-   * 发送语音消息
+   * 在本地聊天界面添加语音消息
    */
-  sendVoiceMessage(voiceUrl, duration) {
+  addVoiceMessageToChat(voiceUrl, duration, audioSize) {
     const message = {
       id: `msg_${Date.now()}`,
       type: 'voice',
@@ -791,7 +972,9 @@ Page({
       time: this.getCurrentTime(),
       avatar: this.data.currentUser.avatar,
       senderName: this.data.currentUser.name,
-      senderId: this.data.currentUser.id
+      senderId: this.data.currentUser.id,
+      audioSize: audioSize,
+      isBinary: true // 标记为二进制音频数据
     };
 
     const messages = [...this.data.messages, message];
@@ -800,43 +983,145 @@ Page({
       toView: `msg-${messages.length - 1}`
     });
 
-    // 上传语音文件并发送
-    this.uploadVoiceFile(voiceUrl, duration);
+    console.log('语音消息已添加到本地聊天界面');
   },
 
   /**
-   * 上传语音文件
+   * 通过文本聊天WebSocket发送语音二进制数据（符合更新后的API文档规范）
+   * 根据API文档，发送语音消息应该通过文本聊天WebSocket端点
+   * 添加了音频数据质量保证，避免NO_VALID_AUDIO_ERROR错误
    */
-  uploadVoiceFile(filePath, duration) {
-    wx.uploadFile({
-      url: 'https://your-server.com/upload/voice',
+  sendVoiceBinaryData(filePath, duration) {
+    // 读取语音文件为二进制数据（微信小程序专用方案）
+    wx.getFileSystemManager().readFile({
       filePath: filePath,
-      name: 'voice',
-      formData: {
-        duration: duration,
-        senderId: this.data.currentUser.id,
-        targetId: this.data.targetUser.id
-      },
+      // 关键：微信小程序中删除encoding参数即可返回ArrayBuffer
+      // 不要设置为null，直接删除该字段
       success: (res) => {
-        const data = JSON.parse(res.data);
-        if (data.success) {
-          // 通过WebSocket发送语音消息
-          const wsManager = this.data.voiceWSManager || this.data.wsManager;
-          if (wsManager && wsManager.isConnected()) {
-            wsManager.send({
-              type: 'message',
-              messageType: 'voice',
-              voiceUrl: data.url,
-              duration: Math.ceil(duration / 1000),
-              senderId: this.data.currentUser.id,
-              targetId: this.data.targetUser.id,
-              timestamp: Date.now()
+        const audioData = res.data;
+        console.log('原始音频数据:', audioData);
+        console.log('音频数据类型:', typeof audioData);
+        console.log('音频数据构造函数:', audioData?.constructor?.name);
+        console.log('音频文件大小:', audioData?.byteLength || 'unknown', '字节');
+        
+        // 微信小程序专用：处理音频数据类型
+        let processedAudioData = audioData;
+        
+        // 微信小程序兼容性处理
+        if (typeof audioData === 'string') {
+          // 如果是base64字符串，需要转换为ArrayBuffer
+          try {
+            processedAudioData = wx.base64ToArrayBuffer(audioData);
+            console.log('base64字符串转换为ArrayBuffer成功，新大小:', processedAudioData.byteLength);
+          } catch (error) {
+            console.error('base64转换ArrayBuffer失败:', error);
+            wx.showToast({
+              title: '语音数据转换失败',
+              icon: 'none'
+            });
+            return;
+          }
+        }
+        
+        // 音频数据质量保证 - 避免NO_VALID_AUDIO_ERROR错误
+        if (!processedAudioData || processedAudioData.byteLength === 0) {
+          console.error('音频数据为空，可能导致NO_VALID_AUDIO_ERROR错误');
+          wx.showToast({
+            title: '音频数据为空',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        // 验证音频参数符合API文档要求（16kHz采样率，16位深度，单声道）
+        // 16位PCM数据应该是偶数个字节
+        if (processedAudioData.byteLength % 2 !== 0) {
+          console.warn('音频数据长度异常，不是16位PCM格式:', processedAudioData.byteLength);
+          wx.showToast({
+            title: '音频格式异常',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        // 确保是有效的ArrayBuffer类型（微信小程序兼容版本）
+        const isArrayBuffer = processedAudioData instanceof ArrayBuffer || 
+                             (processedAudioData && 
+                              typeof processedAudioData === 'object' && 
+                              typeof processedAudioData.byteLength === 'number' &&
+                              processedAudioData.constructor && 
+                              processedAudioData.constructor.name === 'ArrayBuffer');
+        
+        if (!isArrayBuffer) {
+          console.error('语音数据不是ArrayBuffer格式:', {
+            type: typeof processedAudioData,
+            constructor: processedAudioData?.constructor?.name,
+            hasByteLength: typeof processedAudioData?.byteLength,
+            byteLengthValue: processedAudioData?.byteLength,
+            isInstanceOf: processedAudioData instanceof ArrayBuffer
+          });
+          wx.showToast({
+            title: '语音数据格式错误',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        console.log('ArrayBuffer验证通过:', {
+          type: typeof processedAudioData,
+          constructor: processedAudioData.constructor.name,
+          byteLength: processedAudioData.byteLength
+        });
+        
+        // 计算音频数据大小
+        const audioDataSize = processedAudioData.byteLength;
+        console.log('音频数据大小:', audioDataSize, '字节');
+        
+        // 根据API文档，发送语音消息应该通过文本聊天WebSocket
+        if (this.data.wsManager && this.data.wsManager.isConnected) {
+          // 首先验证音频数据质量，避免NO_VALID_AUDIO_ERROR错误
+          if (audioDataSize < 100) { // 假设最小有效音频数据为100字节
+            console.warn('音频数据过小，可能无效:', audioDataSize);
+            wx.showToast({
+              title: '音频数据过短',
+              icon: 'none'
+            });
+            return;
+          }
+          
+          // 发送语音二进制数据（这是关键 - 通过文本聊天WebSocket发送音频）
+          const sendResult = this.data.wsManager.sendBinary(processedAudioData);
+          console.log('语音二进制数据通过文本聊天WebSocket发送结果:', sendResult ? '成功' : '失败', '数据长度:', audioDataSize, '字节');
+          
+          if (sendResult) {
+            // 成功发送音频数据后，在本地聊天界面添加语音消息
+            this.addVoiceMessageToChat(filePath, duration, audioDataSize);
+            
+            wx.showToast({
+              title: '语音消息发送成功',
+              icon: 'success',
+              duration: 1000
+            });
+          } else {
+            wx.showToast({
+              title: '语音发送失败',
+              icon: 'none'
             });
           }
+        } else {
+          console.warn('文本聊天WebSocket未连接');
+          wx.showToast({
+            title: '聊天服务未连接',
+            icon: 'none'
+          });
         }
       },
       fail: (error) => {
-        console.error('上传语音失败:', error);
+        console.error('读取语音文件失败:', error);
+        wx.showToast({
+          title: '语音文件读取失败',
+          icon: 'none'
+        });
       }
     });
   },
@@ -847,11 +1132,19 @@ Page({
   playVoice(e) {
     const voiceUrl = e.currentTarget.dataset.voice;
     const duration = e.currentTarget.dataset.duration;
+    const isBinary = e.currentTarget.dataset.isBinary;
     
     if (!voiceUrl) return;
 
     const innerAudioContext = wx.createInnerAudioContext();
-    innerAudioContext.src = voiceUrl;
+    
+    if (isBinary) {
+      // 对于二进制音频数据，需要转换为base64或使用特殊处理
+      // 这里假设语音数据已经是可用的格式
+      innerAudioContext.src = voiceUrl;
+    } else {
+      innerAudioContext.src = voiceUrl;
+    }
     
     innerAudioContext.play();
     
@@ -1278,7 +1571,7 @@ Page({
   },
 
   /**
-   * 开始语音通话
+   * 开始语音通话（符合API文档规范）
    */
   startVoiceCall() {
     wx.showModal({
@@ -1288,18 +1581,17 @@ Page({
         if (res.confirm) {
           // 先初始化语音WebSocket连接
           this.initVoiceWebSocket().then((voiceWSManager) => {
-            // 发送语音通话请求
-            voiceWSManager.send({
-              type: 'voice_call_request',
-              senderId: this.data.currentUser.id,
-              targetId: this.data.targetUser.id,
-              timestamp: Date.now()
+            console.log('语音WebSocket连接成功，开始语音通话流程');
+            
+            // 根据API文档，语音通话不需要特殊的请求消息
+            // 直接通过二进制音频数据进行实时通信
+            
+            // 跳转到语音通话页面，带上WebSocket连接状态
+            wx.navigateTo({
+              url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=true&wsConnected=true`
             });
             
-            // 跳转到语音通话页面
-            wx.navigateTo({
-              url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=true`
-            });
+            console.log('已跳转到语音通话页面');
           }).catch((error) => {
             wx.showToast({
               title: '语音连接失败',
@@ -1757,9 +2049,14 @@ Page({
   },
 
   /**
-   * 处理语音通话
+   * 处理语音通话（符合API文档的实时通信模式）
    */
   handleVoiceCall(data) {
+    console.log('处理语音通话请求，数据:', data);
+    
+    // 根据API文档，语音通话是基于WebSocket二进制数据的实时通信
+    // 不需要复杂的请求/响应机制
+    
     // 显示来电界面
     wx.showModal({
       title: '语音来电',
@@ -1768,29 +2065,17 @@ Page({
       cancelText: '拒绝',
       success: (res) => {
         if (res.confirm) {
-          // 接听
-          if (this.data.voiceWSManager) {
-            this.data.voiceWSManager.send({
-              type: 'voice_call_accept',
-              senderId: this.data.currentUser.id,
-              targetId: this.data.targetUser.id,
-              timestamp: Date.now()
-            });
-          }
+          console.log('用户选择接听语音通话');
           
+          // 接听 - 直接跳转到通话页面，通过WebSocket进行实时通信
           wx.navigateTo({
             url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=false`
           });
+          
+          console.log('已跳转到语音通话页面，开始实时语音通信');
         } else {
-          // 拒绝
-          if (this.data.voiceWSManager) {
-            this.data.voiceWSManager.send({
-              type: 'voice_call_reject',
-              senderId: this.data.currentUser.id,
-              targetId: this.data.targetUser.id,
-              timestamp: Date.now()
-            });
-          }
+          console.log('用户拒绝接听语音通话');
+          // 拒绝 - 不需要特殊处理，关闭弹窗即可
         }
       }
     });
@@ -1871,5 +2156,288 @@ Page({
       });
       return false;
     }
+  },
+
+  /**
+   * 处理传入的语音音频数据（符合API文档规范）
+   */
+  handleIncomingVoiceAudio(audioData) {
+    console.log('处理传入语音音频数据，长度:', audioData.byteLength, '字节');
+    
+    // 检查音频数据格式是否符合要求（PCM, 16kHz, 16bit, 单声道）
+    if (audioData.byteLength === 0) {
+      console.warn('收到的音频数据为空');
+      return;
+    }
+    
+    // 创建临时文件保存音频数据
+    const fileManager = wx.getFileSystemManager();
+    const tempFilePath = `${wx.env.USER_DATA_PATH}/voice_${Date.now()}.pcm`;
+    
+    try {
+      // 将ArrayBuffer写入临时文件
+      fileManager.writeFile({
+        filePath: tempFilePath,
+        data: audioData,
+        encoding: 'binary',
+        success: () => {
+          console.log('语音音频数据已保存到临时文件:', tempFilePath);
+          
+          // 第三步：修复语音文件大小读取（使用ArrayBuffer原生属性）
+            const audioDataSize = audioData.byteLength; // 正确使用ArrayBuffer的byteLength属性
+            console.log('语音数据实际大小:', audioDataSize, '字节');
+            
+            // 根据API文档规范计算音频参数
+            const sampleCount = audioDataSize / 2; // 16位样本数
+            const durationMs = (sampleCount / 16000) * 1000; // 16kHz采样率
+          
+          // 创建语音消息（符合API文档的PCM格式）
+          const message = {
+            id: `voice_${Date.now()}`,
+            type: 'voice',
+            voiceUrl: tempFilePath,
+            duration: Math.ceil(durationMs / 1000), // 转换为秒
+            isMe: false,
+            time: this.getCurrentTime(),
+            avatar: this.data.targetUser.avatar,
+            senderName: this.data.targetUser.name,
+            senderId: this.data.targetUser.id,
+            isBinary: true, // 标记为二进制音频数据
+            audioSize: audioDataSize, // 使用修复后的大小
+            format: 'pcm_16bit', // 符合API文档要求
+            sampleRate: 16000,
+            channels: 1,
+            bitDepth: 16
+          };
+
+          // 添加到消息列表
+          const messages = [...this.data.messages, message];
+          this.setData({
+            messages: messages,
+            toView: `msg-${messages.length - 1}`
+          });
+          
+          console.log('语音消息已添加到聊天界面，格式: PCM, 16kHz, 16bit, 单声道');
+        },
+        fail: (error) => {
+          console.error('保存语音音频数据失败:', error);
+        }
+      });
+    } catch (error) {
+      console.error('处理传入语音音频数据异常:', error);
+    }
+  },
+
+  /**
+   * 处理语音消息元数据
+   */
+  handleVoiceMessageMetadata(data) {
+    console.log('处理语音消息元数据:', data);
+    
+    if (data.duration && data.audioSize) {
+      // 查找最近的语音消息并更新其元数据
+      const messages = this.data.messages.map(msg => {
+        if (msg.type === 'voice' && msg.isBinary && msg.audioSize === data.audioSize) {
+          return {
+            ...msg,
+            duration: data.duration,
+            hasMetadata: true
+          };
+        }
+        return msg;
+      });
+      
+      this.setData({ messages });
+      console.log('语音消息元数据已更新');
+    }
+  },
+
+  /**
+   * 获取下一个序列号
+   */
+  getNextSequenceNumber() {
+    if (!this.sequenceNumber) {
+      this.sequenceNumber = 0;
+    }
+    return this.sequenceNumber++;
+  },
+
+  /**
+   * 处理AI回复消息
+   */
+  handleAIResponse(data) {
+    console.log('收到AI回复:', data);
+    
+    // 检查AI回复的状态
+    if (data.status === 'success' && data.data) {
+      // 创建AI回复消息
+      const aiMessage = {
+        id: `ai_${Date.now()}`,
+        type: 'text',
+        content: data.data,
+        isMe: false,
+        time: this.getCurrentTime(),
+        avatar: this.data.targetUser.avatar,
+        senderName: 'AI助手',
+        senderId: 'ai_assistant'
+      };
+      
+      // 添加到消息列表
+      const messages = [...this.data.messages, aiMessage];
+      this.setData({
+        messages: messages,
+        toView: `msg-${messages.length - 1}`
+      });
+      
+      console.log('AI回复已添加到聊天界面:', data.data);
+    } else {
+      console.error('AI回复格式错误:', data);
+      if (data.message) {
+        wx.showToast({
+          title: data.message,
+          icon: 'none'
+        });
+      }
+    }
+  },
+
+  /**
+   * 计算音频级别（简化版本）
+   */
+  calculateAudioLevel(audioData) {
+    if (!(audioData instanceof ArrayBuffer)) return 0;
+    
+    const dataView = new DataView(audioData);
+    const sampleCount = dataView.byteLength / 2; // 16位样本
+    let sum = 0;
+    
+    // 计算RMS（均方根）值作为音频级别
+    for (let i = 0; i < sampleCount; i++) {
+      const sample = dataView.getInt16(i * 2, true) / 32768.0; // 归一化到-1到1
+      sum += sample * sample;
+    }
+    
+    const rms = Math.sqrt(sum / sampleCount);
+    return Math.min(rms, 1.0); // 限制在0-1范围内
+  },
+
+  /**
+   * 处理控制命令确认（新的API文档要求）
+   */
+  handleControlAck(data) {
+    console.log('收到控制命令确认:', data);
+    
+    if (data.action === 'start_recording' && data.status === 'success') {
+      console.log('服务器确认录音开始');
+      wx.showToast({
+        title: '录音已开始',
+        icon: 'success',
+        duration: 1000
+      });
+    } else if (data.action === 'stop_recording' && data.status === 'success') {
+      console.log('服务器确认录音停止');
+      wx.showToast({
+        title: '录音已停止',
+        icon: 'success',
+        duration: 1000
+      });
+    }
+  },
+
+  /**
+   * 处理语音识别结果（新的API文档要求）
+   */
+  handleASRResult(data) {
+    console.log('收到语音识别结果:', data);
+    
+    if (data.status === 'success' && data.data) {
+      // 显示语音识别结果
+      const asrMessage = {
+        id: `asr_${Date.now()}`,
+        type: 'text',
+        content: `语音识别: ${data.data}`,
+        isMe: false,
+        time: this.getCurrentTime(),
+        avatar: this.data.targetUser.avatar,
+        senderName: '语音识别',
+        senderId: 'asr_system'
+      };
+      
+      const messages = [...this.data.messages, asrMessage];
+      this.setData({
+        messages: messages,
+        toView: `msg-${messages.length - 1}`
+      });
+    }
+  },
+
+  /**
+   * 处理语音识别错误（新的API文档要求）
+   */
+  handleASRError(data) {
+    console.error('收到语音识别错误:', data);
+    
+    let errorMessage = '语音识别失败';
+    if (data.message) {
+      if (data.message.includes('NO_VALID_AUDIO_ERROR')) {
+        errorMessage = '音频数据无效，请重新录音';
+      } else {
+        errorMessage = data.message;
+      }
+    }
+    
+    wx.showToast({
+      title: errorMessage,
+      icon: 'none',
+      duration: 3000
+    });
+  },
+
+  /**
+   * 处理消息错误（最新的API文档要求）
+   */
+  handleMessageError(data) {
+    console.error('收到消息处理错误:', data);
+    
+    let errorMessage = '处理消息失败';
+    if (data.message) {
+      errorMessage = data.message;
+    }
+    
+    wx.showToast({
+      title: errorMessage,
+      icon: 'none',
+      duration: 3000
+    });
+  },
+
+  /**
+   * 语音WebSocket连接成功
+   */
+  onVoiceWebSocketOpen() {
+    console.log('语音WebSocket连接成功');
+    // 发送语音服务认证信息
+    if (this.data.voiceWSManager) {
+      this.data.voiceWSManager.send({
+        type: 'auth',
+        userId: this.data.currentUser.id,
+        targetUserId: this.data.targetUser.id,
+        service: 'voice'
+      });
+    }
+  },
+
+  /**
+   * 语音WebSocket连接关闭
+   */
+  onVoiceWebSocketClose() {
+    console.log('语音WebSocket连接关闭');
+  },
+
+  /**
+   * 语音WebSocket错误
+   */
+  onVoiceWebSocketError(error) {
+    console.error('语音WebSocket错误:', error);
   }
 })

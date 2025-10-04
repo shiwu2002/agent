@@ -14,7 +14,7 @@
             <view wx:if="{{item.type === 'text'}}" class="message-bubble message-bubble-left">
               <text class="message-text">{{item.content}}</text>
             </view>
-            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-left" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}">
+            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-left" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}" data-is-binary="{{item.isBinary}}">
               <image class="voice-icon" src="/pages/images/214声波、语音消息.png" mode="aspectFit"></image>
               <text class="voice-duration">{{item.duration}}"</text>
               <view class="voice-wave">
@@ -50,7 +50,7 @@
             <view wx:if="{{item.type === 'text'}}" class="message-bubble message-bubble-right">
               <text class="message-text">{{item.content}}</text>
             </view>
-            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-right" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}">
+            <view wx:if="{{item.type === 'voice'}}" class="voice-bubble voice-bubble-right" bindtap="playVoice" data-voice="{{item.voiceUrl}}" data-duration="{{item.duration}}" data-is-binary="{{item.isBinary}}">
               <image class="voice-icon" src="/pages/images/214声波、语音消息.png" mode="aspectFit"></image>
               <text class="voice-duration">{{item.duration}}"</text>
               <view class="voice-wave">

@@ -49,6 +49,9 @@ Page({
     
     // 初始化视频通话
     this.initVideoCall();
+    
+    // 启动心跳机制（符合API文档要求：25秒间隔）
+    this.startHeartbeat();
   },
 
   /**
@@ -56,6 +59,7 @@ Page({
    */
   onUnload() {
     this.endCall();
+    this.stopHeartbeat();
   },
 
   /**
@@ -145,7 +149,7 @@ Page({
   },
 
   /**
-   * 初始化视频WebSocket连接
+   * 初始化视频WebSocket连接（符合API文档要求）
    */
   initVideoWebSocket() {
     const app = getApp();
@@ -158,20 +162,37 @@ Page({
       onOpen: () => {
         console.log('视频通话页面WebSocket连接成功');
         this.setupWebSocketListeners();
-        // 发送认证信息
-        videoWSManager.send({
-          type: 'auth',
+        // 发送认证信息 - 使用标准JSON格式
+        const authMessage = {
+          type: 'chat',
+          content: JSON.stringify({
+            type: 'auth',
+            userId: this.data.localUserInfo.id,
+            targetUserId: this.data.targetUserId,
+            service: 'video'
+          }),
+          messageId: `auth_${Date.now()}`,
           userId: this.data.localUserInfo.id,
-          targetUserId: this.data.targetUserId,
-          service: 'video'
-        });
+          metadata: {
+            authType: 'video_service',
+            service: 'video',
+            timestamp: Date.now()
+          }
+        };
+        
+        videoWSManager.send(authMessage);
+        
+        // 根据API文档，发送心跳消息以保持连接
+        this.startHeartbeat();
       },
       onMessage: this.handleVideoMessage.bind(this),
       onClose: () => {
         console.log('视频通话页面WebSocket连接关闭');
+        this.stopHeartbeat();
       },
       onError: (error) => {
         console.error('视频通话页面WebSocket错误:', error);
+        this.stopHeartbeat();
         wx.showToast({
           title: '视频连接失败',
           icon: 'none'
@@ -464,7 +485,7 @@ Page({
   },
 
   /**
-   * 结束通话
+   * 结束通话（符合API文档要求）
    */
   endCall() {
     // 停止推流和播放
@@ -472,23 +493,40 @@ Page({
       this.pusherContext.stop();
     }
 
-    // 发送通话结束消息
+    // 发送通话结束消息 - 使用标准JSON格式（符合API文档要求）
     const app = getApp();
     if (app.globalData.videoWSManager && app.globalData.videoWSManager.isConnected()) {
-      app.globalData.videoWSManager.send({
-        type: 'video_call_end',
-        senderId: this.data.localUserInfo.id,
-        targetUserId: this.data.targetUserId,
-        timestamp: Date.now()
-      });
+      const endCallMessage = {
+        type: 'control',
+        content: 'video_call_end',
+        messageId: `video_end_${Date.now()}`,
+        userId: this.data.localUserInfo.id,
+        metadata: {
+          callType: 'video',
+          endType: 'user_initiated',
+          targetUserId: this.data.targetUserId,
+          timestamp: Date.now()
+        }
+      };
+      
+      const sendResult = app.globalData.videoWSManager.send(endCallMessage);
+      if (sendResult) {
+        console.log('已发送视频通话结束消息（符合API文档）:', endCallMessage);
+      } else {
+        console.warn('发送视频通话结束消息失败');
+      }
+    } else {
+      console.warn('视频WebSocket未连接，无法发送通话结束消息');
     }
 
     this.stopCallTimer();
     
-    // 返回上一页
-    wx.navigateBack({
-      delta: 1
-    });
+    // 延迟返回上一页
+    setTimeout(() => {
+      wx.navigateBack({
+        delta: 1
+      });
+    }, 1000);
   },
 
   /**
@@ -496,5 +534,40 @@ Page({
    */
   onHide() {
     this.stopCallTimer();
+  }
+
+  /**
+   * 启动心跳机制（符合API文档要求：25秒间隔）
+   */
+  startHeartbeat() {
+    this.stopHeartbeat();
+    
+    this.heartbeatTimer = setInterval(() => {
+      const app = getApp();
+      if (app.globalData.videoWSManager && app.globalData.videoWSManager.isConnected()) {
+        // 发送心跳消息（纯文本格式）
+        const heartbeatMessage = 'ping';
+        const sendResult = app.globalData.videoWSManager.send(heartbeatMessage);
+        
+        if (sendResult) {
+          console.log('心跳消息发送成功（25秒间隔）:', heartbeatMessage);
+        } else {
+          console.warn('心跳消息发送失败');
+        }
+      }
+    }, 25000); // 25秒间隔，符合API文档要求
+    
+    console.log('心跳机制已启动（25秒间隔）');
+  }
+
+  /**
+   * 停止心跳机制
+   */
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      console.log('心跳机制已停止');
+    }
   }
 })

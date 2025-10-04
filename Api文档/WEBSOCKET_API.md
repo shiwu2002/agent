@@ -85,6 +85,11 @@ ws://localhost:8080/ws/voice?userId=your_user_id
 {"type":"control","content":"stop_recording"}
 ```
 
+###### 打断AI回复
+```json
+{"type":"control","content":"interrupt"}
+```
+
 ##### 二进制消息（音频数据）
 
 传输 PCM 格式的音频数据，参数要求：
@@ -167,6 +172,7 @@ ws://localhost:8080/ws/voice?userId=your_user_id
    {"type":"chat","content":"AI的回复内容"}
    ```
 6. 同时将 AI 回复转换为语音，通过 WebSocket 二进制消息发送给客户端
+7. 服务器将音频文件保存到本地，并通过控制消息通知客户端音频文件路径
 
 ### 文本聊天流程
 
@@ -202,3 +208,65 @@ ws://localhost:8080/ws/voice?userId=your_user_id
 ## 连接关闭
 
 当连接关闭时，系统会自动清理相关资源。
+
+## TTS音频文件处理
+
+为了解决前端存储限制问题，服务器会将生成的TTS音频文件保存到本地，并提供以下机制：
+
+### WebSocket控制消息
+
+在TTS处理过程中，服务器会发送以下控制消息：
+
+1. **开始播放**：
+   ```json
+   {"type":"control","content":"tts_start"}
+   ```
+
+2. **播放结束**（包含音频文件名）：
+   ```json
+   {"type":"control","content":"tts_end:tts_audio_xxxxxx.pcm"}
+   ```
+
+3. **播放错误**：
+   ```json
+   {"type":"control","content":"tts_error:错误描述"}
+   ```
+
+### REST API接口
+
+服务器还提供了REST API接口用于直接生成和访问音频文件：
+
+#### 生成TTS音频文件
+```
+GET /audio/generate?text=需要合成的文本
+```
+
+响应示例：
+```json
+{
+  "code": 200,
+  "msg": "音频文件生成成功",
+  "data": "/temp/tts_audio_xxxxxx.pcm"
+}
+```
+
+#### 下载音频文件
+```
+GET /audio/download?fileName=tts_audio_xxxxxx.pcm
+```
+
+### 音频文件访问
+
+生成的音频文件可以通过以下URL直接访问：
+```
+http://your-server-address/temp/tts_audio_xxxxxx.pcm
+```
+
+## 实时处理特性
+
+系统支持以下实时处理特性：
+
+1. **流式语音识别**：语音输入时实时返回部分识别结果
+2. **流式TTS播放**：AI回复时实时生成和播放音频
+3. **语音打断**：用户可随时打断AI回复过程
+4. **资源管理**：自动清理过期音频文件，避免存储空间耗尽

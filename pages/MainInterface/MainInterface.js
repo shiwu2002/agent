@@ -1,6 +1,5 @@
 // pages/MainInterface/MainInterface.js
 const WebSocketManager = require('../../utils/websocket.js');
-const VoiceRecorder = require('../../utils/voice-recorder.js');
 
 Page({
 
@@ -20,7 +19,6 @@ Page({
     recordingTime: 0,
     recordingText: '按住说话',
     wsManager: null,
-    voiceRecorder: null,
     currentUser: {
       id: '',
       name: '',
@@ -105,7 +103,6 @@ Page({
     }
     
     this.initWebSocket();
-    this.initVoiceRecorder();
     this.loadHistoryMessages();
   },
 
@@ -166,8 +163,15 @@ Page({
    * 初始化WebSocket连接
    */
   initWebSocket() {
+    // 获取全局数据中的认证信息
+    const app = getApp();
+    const globalData = app.globalData || {};
+    
+    // 构建WebSocket URL，包含认证信息
+    const url = `ws://localhost:8080/ws/chat?token=${globalData.token}&openId=${globalData.openId}`;
+    
     const wsManager = new WebSocketManager({
-      url: 'wss://your-websocket-server.com/chat',
+      url: url,
       onOpen: this.onWebSocketOpen.bind(this),
       onMessage: this.onWebSocketMessage.bind(this),
       onClose: this.onWebSocketClose.bind(this),
@@ -180,19 +184,7 @@ Page({
     wsManager.connect();
   },
 
-  /**
-   * 初始化语音录制器
-   */
-  initVoiceRecorder() {
-    const voiceRecorder = new VoiceRecorder({
-      onStart: this.onRecordingStart.bind(this),
-      onStop: this.onRecordingStop.bind(this),
-      onError: this.onRecordingError.bind(this),
-      maxDuration: 60000 // 60秒
-    });
-
-    this.setData({ voiceRecorder });
-  },
+  
 
   /**
    * WebSocket连接成功
@@ -212,26 +204,30 @@ Page({
   /**
    * 收到WebSocket消息
    */
-  onWebSocketMessage(message) {
-    console.log('收到消息:', message);
+  onWebSocketMessage(event) {
+    console.log('收到消息:', event.data);
     
-    const data = JSON.parse(message.data);
-    
-    switch (data.type) {
-      case 'message':
-        this.receiveMessage(data);
-        break;
-      case 'voice_call':
-        this.handleVoiceCall(data);
-        break;
-      case 'video_call':
-        this.handleVideoCall(data);
-        break;
-      case 'user_status':
-        this.updateUserStatus(data);
-        break;
-      default:
-        console.log('未知消息类型:', data.type);
+    try {
+      // 尝试解析JSON消息
+      const data = JSON.parse(event.data);
+      
+      switch (data.type) {
+        case 'CHAT':
+          this.receiveMessage(data);
+          break;
+        case 'CONTROL':
+          this.handleControlMessage(data);
+          break;
+        default:
+          console.log('未知消息类型:', data.type);
+      }
+    } catch (e) {
+      // 处理非JSON消息（如PING/PONG）
+      if (event.data === 'PING') {
+        // PING消息已在WebSocketManager中处理
+        return;
+      }
+      console.log('收到非JSON消息:', event.data);
     }
   },
 
@@ -270,7 +266,7 @@ Page({
       {
         id: 'msg_2',
         type: 'text',
-        content: '支持文本、语音、图片等多种消息类型。',
+        content: '现在可以发送文本消息了。',
         isMe: true,
         time: '14:32',
         avatar: this.data.currentUser.avatar,
@@ -293,35 +289,43 @@ Page({
     const content = this.data.inputValue.trim();
     if (!content) return;
 
-    const message = {
-      id: `msg_${Date.now()}`,
-      type: 'text',
-      content: content,
-      isMe: true,
-      time: this.getCurrentTime(),
-      avatar: this.data.currentUser.avatar,
-      senderName: this.data.currentUser.name,
-      senderId: this.data.currentUser.id,
-      targetId: this.data.targetUser.id
-    };
-
-    // 添加到本地消息列表
-    const messages = [...this.data.messages, message];
-    this.setData({
-      messages: messages,
-      inputValue: '',
-      toView: `msg-${messages.length - 1}`
-    });
-
     // 通过WebSocket发送
     if (this.data.wsManager && this.data.wsManager.isConnected()) {
-      this.data.wsManager.send({
-        type: 'message',
-        messageType: 'text',
-        content: content,
-        senderId: this.data.currentUser.id,
-        targetId: this.data.targetUser.id,
-        timestamp: Date.now()
+      const success = this.data.wsManager.send({
+        type: 'CHAT',
+        content: content
+      });
+      
+      if (success) {
+        // 发送成功，添加到本地消息列表
+        const message = {
+          id: `msg_${Date.now()}`,
+          type: 'text',
+          content: content,
+          isMe: true,
+          time: this.getCurrentTime(),
+          avatar: this.data.currentUser.avatar,
+          senderName: this.data.currentUser.name,
+          senderId: this.data.currentUser.id
+        };
+
+        // 添加到本地消息列表
+        const messages = [...this.data.messages, message];
+        this.setData({
+          messages: messages,
+          inputValue: '',
+          toView: `msg-${messages.length - 1}`
+        });
+      } else {
+        wx.showToast({
+          title: '发送失败',
+          icon: 'none'
+        });
+      }
+    } else {
+      wx.showToast({
+        title: '未连接到服务器',
+        icon: 'none'
       });
     }
   },
@@ -331,14 +335,14 @@ Page({
    */
   receiveMessage(data) {
     const message = {
-      id: data.id || `msg_${Date.now()}`,
-      type: data.messageType || 'text',
+      id: `msg_${Date.now()}`,
+      type: 'text',
       content: data.content,
       isMe: false,
-      time: this.formatTime(data.timestamp),
-      avatar: data.avatar || this.data.targetUser.avatar,
-      senderName: data.senderName || this.data.targetUser.name,
-      senderId: data.senderId
+      time: this.getCurrentTime(),
+      avatar: this.data.targetUser.avatar,
+      senderName: this.data.targetUser.name,
+      senderId: this.data.targetUser.id
     };
 
     const messages = [...this.data.messages, message];
@@ -729,75 +733,32 @@ Page({
   },
 
   /**
-   * 处理语音通话
+   * 处理控制消息
    */
-  handleVoiceCall(data) {
-    // 显示来电界面
-    wx.showModal({
-      title: '语音来电',
-      content: `${this.data.targetUser.name} 邀请你进行语音通话`,
-      confirmText: '接听',
-      cancelText: '拒绝',
-      success: (res) => {
-        if (res.confirm) {
-          // 接听
-          this.data.wsManager.send({
-            type: 'voice_call_accept',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-          
-          wx.navigateTo({
-            url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}&isCaller=false`
-          });
-        } else {
-          // 拒绝
-          this.data.wsManager.send({
-            type: 'voice_call_reject',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-        }
-      }
-    });
-  },
+  handleControlMessage(data) {
+    if (data.content === '连接已建立') {
+      this.setData({
+        connectionStatus: '已连接'
+      });
+    } else {
+      // 其他控制消息作为系统消息显示
+      const message = {
+        id: `msg_${Date.now()}`,
+        type: 'text',
+        content: data.content,
+        isMe: false,
+        time: this.getCurrentTime(),
+        avatar: this.data.targetUser.avatar,
+        senderName: '系统',
+        senderId: 'system'
+      };
 
-  /**
-   * 处理视频通话
-   */
-  handleVideoCall(data) {
-    // 显示来电界面
-    wx.showModal({
-      title: '视频来电',
-      content: `${this.data.targetUser.name} 邀请你进行视频通话`,
-      confirmText: '接听',
-      cancelText: '拒绝',
-      success: (res) => {
-        if (res.confirm) {
-          // 接听
-          this.data.wsManager.send({
-            type: 'video_call_accept',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-          
-          wx.navigateTo({
-            url: `/pages/video-call/video-call?type=video&targetUserId=${this.data.targetUser.id}&isCaller=false`
-          });
-        } else {
-          // 拒绝
-          this.data.wsManager.send({
-            type: 'video_call_reject',
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-        }
-      }
-    });
+      const messages = [...this.data.messages, message];
+      this.setData({
+        messages: messages,
+        toView: `msg-${messages.length - 1}`
+      });
+    }
   },
 
   /**

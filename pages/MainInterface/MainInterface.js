@@ -793,7 +793,7 @@ Page({
     
     // 创建临时文件路径
     const fs = wx.getFileSystemManager();
-    const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_audio.wav`;
+    const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_audio_${Date.now()}.wav`;
     
     // 添加WAV文件头
     const wavBuffer = this.createWavHeader(audioData);
@@ -907,10 +907,23 @@ Page({
       console.log('音频播放结束');
       // 清空缓冲区
       this.audioBuffer = [];
+      // 删除临时音频文件
+      const fs = wx.getFileSystemManager();
+      fs.unlink({
+        filePath: filePath,
+        success: () => {
+          console.log('临时音频文件已删除');
+        },
+        fail: (error) => {
+          console.error('删除临时音频文件失败:', error);
+        }
+      });
     });
     
     this.innerAudioContext.onError((error) => {
       console.error('音频播放错误:', error);
+      // 出错时也清空缓冲区
+      this.audioBuffer = [];
     });
   },
 

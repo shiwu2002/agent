@@ -19,6 +19,9 @@ Page({
     recordingTime: 0,
     recordingText: '按住说话',
     wsManager: null,
+    audioBuffer: [], // 音频缓冲区
+    innerAudioContext: null, // 音频播放上下文
+    isPlayingAudio: false, // 是否正在播放音频
     currentUser: {
       id: '',
       name: '',
@@ -154,9 +157,15 @@ Page({
     if (this.data.wsManager) {
       this.data.wsManager.disconnect();
     }
-    if (this.data.voiceRecorder) {
-      this.data.voiceRecorder.stop();
+    
+    // 销毁音频播放上下文
+    if (this.innerAudioContext) {
+      this.innerAudioContext.destroy();
+      this.innerAudioContext = null;
     }
+    
+    // 清空音频缓冲区
+    this.audioBuffer = [];
   },
 
   /**
@@ -207,27 +216,34 @@ Page({
   onWebSocketMessage(event) {
     console.log('收到消息:', event.data);
     
-    try {
-      // 尝试解析JSON消息
-      const data = JSON.parse(event.data);
-      
-      switch (data.type) {
-        case 'CHAT':
-          this.receiveMessage(data);
-          break;
-        case 'CONTROL':
-          this.handleControlMessage(data);
-          break;
-        default:
-          console.log('未知消息类型:', data.type);
+    // 检查是否为二进制数据
+    if (event.data instanceof ArrayBuffer) {
+      this.handleBinaryData(event.data);
+      return;
+    }
+    
+    // 检查是否为字符串
+    if (typeof event.data === 'string') {
+      try {
+        // 尝试解析JSON消息
+        const data = JSON.parse(event.data);
+        
+        switch (data.type.toLowerCase()) {
+          case 'chat':
+            this.receiveMessage(data);
+            break;
+          case 'control':
+            this.handleControlMessage(data);
+            break;
+          default:
+            console.log('未知消息类型:', data.type);
+        }
+      } catch (e) {
+        // 处理非JSON消息
+        console.log('收到非JSON消息:', event.data);
       }
-    } catch (e) {
-      // 处理非JSON消息（如PING/PONG）
-      if (event.data === 'PING') {
-        // PING消息已在WebSocketManager中处理
-        return;
-      }
-      console.log('收到非JSON消息:', event.data);
+    } else {
+      console.log('收到未知类型消息:', typeof event.data, event.data);
     }
   },
 
@@ -292,7 +308,7 @@ Page({
     // 通过WebSocket发送
     if (this.data.wsManager && this.data.wsManager.isConnected()) {
       const success = this.data.wsManager.send({
-        type: 'CHAT',
+        type: 'chat',
         content: content
       });
       
@@ -733,12 +749,193 @@ Page({
   },
 
   /**
+   * 处理二进制数据
+   */
+  handleBinaryData(data) {
+    console.log('收到二进制数据，长度:', data.byteLength);
+    // 这里可以处理音频数据
+    // 例如，将数据添加到音频缓冲区中
+    this.appendToAudioBuffer(data);
+  },
+
+  /**
+   * 将音频数据添加到缓冲区
+   */
+  appendToAudioBuffer(data) {
+    // 初始化音频缓冲区
+    if (!this.audioBuffer) {
+      this.audioBuffer = [];
+    }
+    
+    // 将新的音频数据添加到缓冲区
+    this.audioBuffer.push(data);
+    
+    // 不再立即播放，而是等待tts_end消息
+  },
+
+  /**
+   * 播放音频
+   */
+  playAudio() {
+    if (!this.audioBuffer || this.audioBuffer.length === 0) {
+      return;
+    }
+    
+    console.log('开始播放音频，数据块数量:', this.audioBuffer.length);
+    
+    // 在微信小程序中播放PCM音频数据
+    // 需要先将ArrayBuffer转换为Base64格式
+    const audioData = this.mergeAudioBuffers();
+    
+    // 创建临时文件路径
+    const fs = wx.getFileSystemManager();
+    const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_audio.wav`;
+    
+    // 添加WAV文件头
+    const wavBuffer = this.createWavHeader(audioData);
+    
+    // 将音频数据写入临时文件
+    fs.writeFile({
+      filePath: tempFilePath,
+      data: wavBuffer,
+      success: () => {
+        console.log('音频数据已写入临时文件');
+        // 播放音频文件
+        this.playAudioFile(tempFilePath);
+      },
+      fail: (error) => {
+        console.error('写入音频文件失败:', error);
+      }
+    });
+  },
+
+  /**
+   * 创建WAV文件头
+   */
+  createWavHeader(audioData) {
+    const sampleRate = 22050; // 采样率
+    const channels = 1; // 单声道
+    const bitsPerSample = 16; // 位深度
+    
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    
+    // RIFF标识
+    this.writeString(view, 0, 'RIFF');
+    // 文件长度
+    view.setUint32(4, 36 + audioData.byteLength, true);
+    // WAVE标识
+    this.writeString(view, 8, 'WAVE');
+    // fmt标识
+    this.writeString(view, 12, 'fmt ');
+    // fmt块长度
+    view.setUint32(16, 16, true);
+    // 音频格式
+    view.setUint16(20, 1, true);
+    // 声道数
+    view.setUint16(22, channels, true);
+    // 采样率
+    view.setUint32(24, sampleRate, true);
+    // 字节率
+    view.setUint32(28, sampleRate * channels * bitsPerSample / 8, true);
+    // 块对齐
+    view.setUint16(32, channels * bitsPerSample / 8, true);
+    // 位深度
+    view.setUint16(34, bitsPerSample, true);
+    // data标识
+    this.writeString(view, 36, 'data');
+    // 数据长度
+    view.setUint32(40, audioData.byteLength, true);
+    
+    // 合并文件头和音频数据
+    const finalBuffer = new Uint8Array(44 + audioData.byteLength);
+    finalBuffer.set(new Uint8Array(header), 0);
+    finalBuffer.set(new Uint8Array(audioData), 44);
+    
+    return finalBuffer.buffer;
+  },
+
+  /**
+   * 写入字符串到DataView
+   */
+  writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  },
+
+  /**
+   * 合并音频缓冲区
+   */
+  mergeAudioBuffers() {
+    // 合并所有音频数据块
+    const totalLength = this.audioBuffer.reduce((acc, buffer) => acc + buffer.byteLength, 0);
+    const mergedBuffer = new Uint8Array(totalLength);
+    
+    let offset = 0;
+    for (const buffer of this.audioBuffer) {
+      mergedBuffer.set(new Uint8Array(buffer), offset);
+      offset += buffer.byteLength;
+    }
+    
+    return mergedBuffer.buffer;
+  },
+
+  /**
+   * 播放音频文件
+   */
+  playAudioFile(filePath) {
+    // 使用InnerAudioContext播放音频
+    if (this.innerAudioContext) {
+      this.innerAudioContext.destroy();
+    }
+    
+    this.innerAudioContext = wx.createInnerAudioContext();
+    this.innerAudioContext.src = filePath;
+    
+    this.innerAudioContext.play();
+    
+    this.innerAudioContext.onPlay(() => {
+      console.log('开始播放音频');
+    });
+    
+    this.innerAudioContext.onEnded(() => {
+      console.log('音频播放结束');
+      // 清空缓冲区
+      this.audioBuffer = [];
+    });
+    
+    this.innerAudioContext.onError((error) => {
+      console.error('音频播放错误:', error);
+    });
+  },
+
+  /**
    * 处理控制消息
    */
   handleControlMessage(data) {
     if (data.content === '连接已建立') {
       this.setData({
         connectionStatus: '已连接'
+      });
+    } else if (data.content === 'tts_start') {
+      // TTS开始播放
+      console.log('开始播放TTS音频');
+      // 显示语音播放动画
+      this.setData({
+        isPlayingAudio: true
+      });
+    } else if (data.content.startsWith('tts_end:')) {
+      // TTS播放结束
+      const audioFile = data.content.split(':')[1];
+      console.log('TTS播放结束，音频文件:', audioFile);
+      
+      // 播放音频
+      this.playAudio();
+      
+      // 隐藏语音播放动画
+      this.setData({
+        isPlayingAudio: false
       });
     } else {
       // 其他控制消息作为系统消息显示

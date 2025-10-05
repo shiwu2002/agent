@@ -55,6 +55,20 @@
     </block>
   </scroll-view>
   
+  <!-- 语音播放动画 -->
+  <view wx:if="{{isPlayingAudio}}" class="audio-playing-overlay">
+    <view class="audio-playing-panel">
+      <text class="audio-playing-text">正在播放语音回复</text>
+      <view class="audio-wave-animation">
+        <view class="wave-bar"></view>
+        <view class="wave-bar"></view>
+        <view class="wave-bar"></view>
+        <view class="wave-bar"></view>
+        <view class="wave-bar"></view>
+      </view>
+    </view>
+  </view>
+  
   <!-- 底部输入区域 -->
   <view class="bottom-area">
     <!-- 语音录制区域 -->

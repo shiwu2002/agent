@@ -176,8 +176,12 @@ Page({
     const app = getApp();
     const globalData = app.globalData || {};
     
-    // 构建WebSocket URL，包含认证信息
-    const url = `ws://localhost:8080/ws/chat?token=${globalData.token}&openId=${globalData.openId}`;
+    // 获取userId和aiSessionId
+    const userId = globalData.userId || this.data.currentUser.id;
+    const aiSessionId = globalData.aiSessionId || 'default_session';
+    
+    // 构建WebSocket URL，包含userId和aiSessionId参数
+    const url = `ws://localhost:8080/ws/chat?userId=${userId}&aiSessionId=${aiSessionId}`;
     
     const wsManager = new WebSocketManager({
       url: url,

@@ -21,16 +21,26 @@ class AuthService {
       const token = await this.exchangeCodeForToken(code)
       console.log('获取token:', token)
       
+      // 检查token是否存在
+      if (!token) {
+        throw new Error('获取token失败')
+      }
+      
       const openId = this.parseToken(token)
       console.log('解析openId:', openId)
+
+      // 从token中解析aiSessionId（假设它在payload中）
+      const aiSessionId = this.extractAiSessionIdFromToken(token)
+      console.log('解析aiSessionId:', aiSessionId)
       
-      this.storeUserInfo(token, openId)
+      this.storeUserInfo(token, openId, aiSessionId)
       
       return {
         success: true,
         token,
         openId,
-        message: '登录成功'
+        message: '登录成功',
+        aiSessionId
       }
     } catch (error) {
       console.error('登录失败:', error)
@@ -101,6 +111,11 @@ class AuthService {
   }
 
   parseToken(token) {
+    // 检查token是否存在
+    if (!token) {
+      throw new Error('Token不存在')
+    }
+    
     try {
       const parts = token.split('.')
       if (parts.length !== 3) {
@@ -126,6 +141,34 @@ class AuthService {
     }
   }
 
+  extractAiSessionIdFromToken(token) {
+    // 检查token是否存在
+    if (!token) {
+      return null
+    }
+    
+    try {
+      const parts = token.split('.')
+      if (parts.length !== 3) {
+        return null
+      }
+
+      let payload = parts[1]
+      while (payload.length % 4) {
+        payload += '='
+      }
+      
+      const decodedPayload = wx.base64ToArrayBuffer(payload)
+      const jsonString = this.arrayBufferToString(decodedPayload)
+      const userInfo = JSON.parse(jsonString)
+      
+      return userInfo.aiSessionId || null
+    } catch (error) {
+      console.warn('解析aiSessionId失败:', error)
+      return null
+    }
+  }
+
   arrayBufferToString(buffer) {
     const uint8Array = new Uint8Array(buffer)
     let result = ''
@@ -135,12 +178,13 @@ class AuthService {
     return result
   }
 
-  storeUserInfo(token, openId) {
+  storeUserInfo(token, openId, aiSessionId) {
     try {
       const app = getApp()
       if (app && app.globalData) {
         app.globalData.token = token
         app.globalData.openId = openId
+        app.globalData.aiSessionId = aiSessionId || null
         console.log('保存成功')
       }
     } catch (error) {
@@ -154,7 +198,8 @@ class AuthService {
       if (app && app.globalData && app.globalData.token && app.globalData.openId) {
         return {
           token: app.globalData.token,
-          openId: app.globalData.openId
+          openId: app.globalData.openId,
+          aiSessionId: app.globalData.aiSessionId || null
         }
       }
     } catch (error) {
@@ -182,6 +227,7 @@ class AuthService {
       if (app && app.globalData) {
         app.globalData.token = null
         app.globalData.openId = null
+        app.globalData.aiSessionId = null
         console.log('退出成功')
       }
     } catch (error) {

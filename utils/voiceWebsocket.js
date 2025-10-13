@@ -1,9 +1,9 @@
-// utils/websocket.js
-// WebSocket工具类，用于处理文本聊天类型的WebSocket连接
+// utils/voiceWebsocket.js
+// 专门用于语音通话的WebSocket管理器
 
-class WebSocketManager {
+class VoiceWebSocketManager {
   constructor(options = {}) {
-    this.url = options.url || 'ws://localhost:8080/ws/chat';
+    this.url = options.url || 'ws://localhost:8080/ws/voice';
     this.onOpen = options.onOpen || (() => {});
     this.onMessage = options.onMessage || (() => {});
     this.onClose = options.onClose || (() => {});
@@ -36,7 +36,7 @@ class WebSocketManager {
       });
       
       this.socket.onOpen((event) => {
-        console.log('WebSocket连接已建立');
+        console.log('语音WebSocket连接已建立');
         this.connected = true;
         this.reconnectAttempts = 0;
         this.onOpen(event);
@@ -53,13 +53,13 @@ class WebSocketManager {
       });
 
       this.socket.onError((error) => {
-        console.error('WebSocket发生错误:', error);
+        console.error('语音WebSocket发生错误:', error);
         this.connected = false;
         this.onError(error);
       });
 
       this.socket.onClose((event) => {
-        console.log('WebSocket连接已关闭');
+        console.log('语音WebSocket连接已关闭');
         this.connected = false;
         
         // 尝试重连
@@ -74,7 +74,7 @@ class WebSocketManager {
         this.onClose(event);
       });
     } catch (error) {
-      console.error('WebSocket连接失败:', error);
+      console.error('语音WebSocket连接失败:', error);
       this.connected = false;
       this.onError(error);
     }
@@ -86,7 +86,7 @@ class WebSocketManager {
    */
   send(data) {
     if (!this.connected) {
-      console.warn('WebSocket未连接，无法发送消息');
+      console.warn('语音WebSocket未连接，无法发送消息');
       return false;
     }
 
@@ -195,4 +195,4 @@ class WebSocketManager {
   }
 }
 
-module.exports = WebSocketManager;
+module.exports = VoiceWebSocketManager;

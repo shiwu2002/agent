@@ -1,0 +1,54 @@
+<!--pages/VoiceCall/VoiceCall.wxml-->
+<view class="container">
+  <!-- 通话状态显示 -->
+  <view class="status-section">
+    <image class="avatar" src="{{targetUser.avatar}}" mode="aspectFill"></image>
+    <text class="user-name">{{targetUser.name}}</text>
+    <text class="status-text">{{callStatus}}</text>
+  </view>
+
+  <!-- 通话时间显示 -->
+  <view class="timer-section" wx:if="{{isConnected}}">
+    <text class="timer">{{formatTime(callDuration)}}</text>
+  </view>
+
+  <!-- 控制按钮 -->
+  <view class="controls-section">
+    <!-- 静音按钮 -->
+    <view class="control-btn" bindtap="toggleMute">
+      <view class="btn-icon {{isMuted ? 'muted' : ''}}">
+        <text class="iconfont">{{isMuted ? '🔇' : '麦克风'}}</text>
+      </view>
+      <text class="btn-label">{{isMuted ? '取消静音' : '静音'}}</text>
+    </view>
+
+    <!-- 挂断按钮 -->
+    <view class="control-btn hangup-btn" bindtap="hangupCall">
+      <view class="btn-icon hangup">
+        <text class="iconfont">挂断</text>
+      </view>
+      <text class="btn-label">挂断</text>
+    </view>
+
+    <!-- 免提按钮 -->
+    <view class="control-btn" bindtap="toggleSpeaker">
+      <view class="btn-icon {{isSpeakerOn ? 'speaker-on' : ''}}">
+        <text class="iconfont">{{isSpeakerOn ? '🔊' : '🔈'}}</text>
+      </view>
+      <text class="btn-label">{{isSpeakerOn ? '免提开' : '免提关'}}</text>
+    </view>
+  </view>
+
+  <!-- 录音按钮 -->
+  <view class="record-section">
+    <view class="record-btn {{isRecording ? 'recording' : ''}}" bindtouchstart="startRecording" bindtouchend="stopRecording" bindtouchcancel="stopRecording">
+      <text class="record-text">{{isRecording ? '松开结束' : '按住说话'}}</text>
+    </view>
+  </view>
+
+  <!-- 网络状态 -->
+  <view class="network-status">
+    <text class="status-indicator {{connectionStatus === '已连接' ? 'connected' : 'disconnected'}}"></text>
+    <text class="status-text">{{connectionStatus}}</text>
+  </view>
+</view>

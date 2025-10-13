@@ -154,8 +154,19 @@ Page({
    * 生命周期函数--监听页面卸载
    */
   onUnload() {
+    // 页面卸载时发送关闭确认消息
+    if (this.data.wsManager && this.data.wsManager.isConnected()) {
+      this.data.wsManager.sendControlCommand('close_websocket');
+    }
+    
     if (this.data.wsManager) {
       this.data.wsManager.disconnect();
+    }
+    
+    // 清除心跳定时器
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     
     // 销毁音频播放上下文
@@ -187,6 +198,7 @@ Page({
       url: url,
       onOpen: this.onWebSocketOpen.bind(this),
       onMessage: this.onWebSocketMessage.bind(this),
+      onAudioData: this.onWebSocketAudioData.bind(this),
       onClose: this.onWebSocketClose.bind(this),
       onError: this.onWebSocketError.bind(this),
       reconnectInterval: 3000,
@@ -195,6 +207,16 @@ Page({
 
     this.setData({ wsManager });
     wsManager.connect();
+    
+    // 发送连接确认消息，告诉后端启动对应的WebSocket服务
+    setTimeout(() => {
+      if (wsManager.isConnected()) {
+        wsManager.sendControlCommand('open_websocket');
+      }
+    }, 100);
+
+    // 启动心跳定时器
+    // this.startHeartbeat();
   },
 
   
@@ -207,11 +229,17 @@ Page({
     this.setData({ connectionStatus: '已连接' });
     
     // 发送用户认证信息
-    this.data.wsManager.send({
-      type: 'auth',
-      userId: this.data.currentUser.id,
-      targetUserId: this.data.targetUser.id
-    });
+    // this.data.wsManager.send({
+    // });
+  },
+
+  /**
+   * 收到WebSocket音频数据
+   */
+  onWebSocketAudioData(data) {
+    console.log('收到WebSocket音频数据，长度:', data.byteLength);
+    // 处理音频数据
+    this.handleBinaryData(data);
   },
 
   /**
@@ -232,12 +260,31 @@ Page({
         // 尝试解析JSON消息
         const data = JSON.parse(event.data);
         
-        switch (data.type.toLowerCase()) {
-          case 'chat':
+        // 根据消息类型处理
+        switch (data.type) {
+          case 'PING':
+            // 回复PONG
+            this.data.wsManager.sendPong();
+            break;
+          case 'PONG':
+            // 心跳响应，无需特殊处理
+            console.log('收到心跳响应');
+            break;
+          case 'TEXT':
+            // 文本消息，显示给用户
             this.receiveMessage(data);
             break;
-          case 'control':
+          case 'AUDIO':
+            // 音频相关消息，不显示给用户
+            console.log('收到音频消息:', data.content);
+            break;
+          case 'CONTROL':
+            // 控制类消息，不显示给用户
             this.handleControlMessage(data);
+            break;
+          case 'ERROR':
+            // 错误消息，作为系统消息显示
+            this.handleErrorMessage(data);
             break;
           default:
             console.log('未知消息类型:', data.type);
@@ -311,10 +358,7 @@ Page({
 
     // 通过WebSocket发送
     if (this.data.wsManager && this.data.wsManager.isConnected()) {
-      const success = this.data.wsManager.send({
-        type: 'chat',
-        content: content
-      });
+      const success = this.data.wsManager.sendTextMessage(content);
       
       if (success) {
         // 发送成功，添加到本地消息列表
@@ -532,67 +576,67 @@ Page({
   /**
    * 上传语音文件
    */
-  uploadVoiceFile(filePath, duration) {
-    wx.uploadFile({
-      url: 'https://your-server.com/upload/voice',
-      filePath: filePath,
-      name: 'voice',
-      formData: {
-        duration: duration,
-        senderId: this.data.currentUser.id,
-        targetId: this.data.targetUser.id
-      },
-      success: (res) => {
-        const data = JSON.parse(res.data);
-        if (data.success) {
-          // 通过WebSocket发送语音消息
-          this.data.wsManager.send({
-            type: 'message',
-            messageType: 'voice',
-            voiceUrl: data.url,
-            duration: Math.ceil(duration / 1000),
-            senderId: this.data.currentUser.id,
-            targetId: this.data.targetUser.id,
-            timestamp: Date.now()
-          });
-        }
-      },
-      fail: (error) => {
-        console.error('上传语音失败:', error);
-      }
-    });
-  },
+  // uploadVoiceFile(filePath, duration) {
+  //   wx.uploadFile({
+  //     url: 'https://your-server.com/upload/voice',
+  //     filePath: filePath,
+  //     name: 'voice',
+  //     formData: {
+  //       duration: duration,
+  //       senderId: this.data.currentUser.id,
+  //       targetId: this.data.targetUser.id
+  //     },
+  //     success: (res) => {
+  //       const data = JSON.parse(res.data);
+  //       if (data.success) {
+  //         // 通过WebSocket发送语音消息
+  //         this.data.wsManager.send({
+  //           type: 'message',
+  //           messageType: 'voice',
+  //           voiceUrl: data.url,
+  //           duration: Math.ceil(duration / 1000),
+  //           senderId: this.data.currentUser.id,
+  //           targetId: this.data.targetUser.id,
+  //           timestamp: Date.now()
+  //         });
+  //       }
+  //     },
+  //     fail: (error) => {
+  //       console.error('上传语音失败:', error);
+  //     }
+  //   });
+  // },
 
   /**
    * 播放语音
    */
-  playVoice(e) {
-    const voiceUrl = e.currentTarget.dataset.voice;
-    const duration = e.currentTarget.dataset.duration;
+  // playVoice(e) {
+  //   const voiceUrl = e.currentTarget.dataset.voice;
+  //   const duration = e.currentTarget.dataset.duration;
     
-    if (!voiceUrl) return;
+  //   if (!voiceUrl) return;
 
-    const innerAudioContext = wx.createInnerAudioContext();
-    innerAudioContext.src = voiceUrl;
+  //   const innerAudioContext = wx.createInnerAudioContext();
+  //   innerAudioContext.src = voiceUrl;
     
-    innerAudioContext.play();
+  //   innerAudioContext.play();
     
-    // 显示播放动画
-    this.showVoiceAnimation(e.currentTarget);
+  //   // 显示播放动画
+  //   this.showVoiceAnimation(e.currentTarget);
     
-    innerAudioContext.onEnded(() => {
-      this.hideVoiceAnimation();
-    });
+  //   innerAudioContext.onEnded(() => {
+  //     this.hideVoiceAnimation();
+  //   });
     
-    innerAudioContext.onError((err) => {
-      console.error('播放语音失败:', err);
-      this.hideVoiceAnimation();
-      wx.showToast({
-        title: '播放失败',
-        icon: 'none'
-      });
-    });
-  },
+  //   innerAudioContext.onError((err) => {
+  //     console.error('播放语音失败:', err);
+  //     this.hideVoiceAnimation();
+  //     wx.showToast({
+  //       title: '播放失败',
+  //       icon: 'none'
+  //     });
+  //   });
+  // },
 
   /**
    * 显示语音播放动画
@@ -719,7 +763,7 @@ Page({
           
           // 跳转到通话页面
           wx.navigateTo({
-            url: `/pages/voice-call/voice-call?type=voice&targetUserId=${this.data.targetUser.id}`
+            url: `/pages/VoiceCall/VoiceCall?targetUserId=${this.data.targetUser.id}&targetUserName=${encodeURIComponent(this.data.targetUser.name)}`
           });
         }
       }
@@ -918,6 +962,9 @@ Page({
    * 处理控制消息
    */
   handleControlMessage(data) {
+    // 控制类消息不显示给用户，只在控制台记录
+    console.log('收到控制消息:', data.content);
+    
     if (data.content === '连接已建立') {
       this.setData({
         connectionStatus: '已连接'
@@ -941,25 +988,37 @@ Page({
       this.setData({
         isPlayingAudio: false
       });
-    } else {
-      // 其他控制消息作为系统消息显示
-      const message = {
-        id: `msg_${Date.now()}`,
-        type: 'text',
-        content: data.content,
-        isMe: false,
-        time: this.getCurrentTime(),
-        avatar: this.data.targetUser.avatar,
-        senderName: '系统',
-        senderId: 'system'
-      };
-
-      const messages = [...this.data.messages, message];
-      this.setData({
-        messages: messages,
-        toView: `msg-${messages.length - 1}`
-      });
     }
+    // 其他控制消息不显示给用户
+  },
+
+  /**
+   * 处理错误消息
+   */
+  handleErrorMessage(data) {
+    // 将错误消息作为系统消息显示
+    const message = {
+      id: `msg_${Date.now()}`,
+      type: 'ERROR',
+      content: data.content,
+      isMe: false,
+      time: this.getCurrentTime(),
+      avatar: this.data.targetUser.avatar,
+      senderName: '系统',
+      senderId: 'system'
+    };
+
+    const messages = [...this.data.messages, message];
+    this.setData({
+      messages: messages,
+      toView: `msg-${messages.length - 1}`
+    });
+    
+    // 显示错误提示
+    wx.showToast({
+      title: '发生错误',
+      icon: 'none'
+    });
   },
 
   /**
@@ -1010,5 +1069,46 @@ Page({
         toView: `msg-${length - 1}`
       });
     }
+  },
+
+  /**
+   * 启动心跳定时器
+   */
+  startHeartbeat() {
+    // 清除现有的心跳定时器
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    
+    // 不再发送心跳消息
+  },
+
+  /**
+   * 生命周期函数--监听页面卸载
+   */
+onUnload() {
+  // 页面卸载时发送关闭确认消息
+  if (this.data.wsManager && this.data.wsManager.isConnected()) {
+    this.data.wsManager.sendControlCommand('close_websocket');
   }
+  
+  if (this.data.wsManager) {
+    this.data.wsManager.disconnect();
+  }
+  
+  // 清除心跳定时器
+  if (this.heartbeatTimer) {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+  
+  // 销毁音频播放上下文
+  if (this.innerAudioContext) {
+    this.innerAudioContext.destroy();
+    this.innerAudioContext = null;
+  }
+  
+  // 清空音频缓冲区
+  this.audioBuffer = [];
+}
 })

@@ -1,0 +1,147 @@
+/* pages/VoiceCall/VoiceCall.wxss */
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  height: 100vh;
+  padding: 40rpx;
+  box-sizing: border-box;
+  background: linear-gradient(to bottom, #4a90e2, #2c3e50);
+  color: white;
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 80rpx;
+}
+
+.avatar {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 50%;
+  border: 6rpx solid rgba(255, 255, 255, 0.3);
+  margin-bottom: 30rpx;
+}
+
+.user-name {
+  font-size: 48rpx;
+  font-weight: bold;
+  margin-bottom: 20rpx;
+}
+
+.status-text {
+  font-size: 32rpx;
+  opacity: 0.9;
+}
+
+.timer-section {
+  margin: 40rpx 0;
+}
+
+.timer {
+  font-size: 80rpx;
+  font-weight: bold;
+  font-family: 'monospace';
+}
+
+.controls-section {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+  margin: 60rpx 0;
+}
+
+.control-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.btn-icon {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16rpx;
+  font-size: 48rpx;
+}
+
+.btn-icon.muted {
+  background-color: #e74c3c;
+}
+
+.btn-icon.hangup {
+  background-color: #e74c3c;
+}
+
+.btn-icon.speaker-on {
+  background-color: #27ae60;
+}
+
+.btn-label {
+  font-size: 24rpx;
+  opacity: 0.8;
+}
+
+.hangup-btn .btn-icon {
+  width: 140rpx;
+  height: 140rpx;
+}
+
+.record-section {
+  margin: 60rpx 0;
+}
+
+.record-btn {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+  background-color: #3498db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 20rpx rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.record-btn.recording {
+  background-color: #e74c3c;
+  transform: scale(1.1);
+}
+
+.record-text {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+.network-status {
+  display: flex;
+  align-items: center;
+  margin-top: 40rpx;
+}
+
+.status-indicator {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  margin-right: 16rpx;
+}
+
+.status-indicator.connected {
+  background-color: #27ae60;
+}
+
+.status-indicator.disconnected {
+  background-color: #e74c3c;
+}
+
+.status-text {
+  font-size: 24rpx;
+  opacity: 0.8;
+}

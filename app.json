@@ -3,7 +3,8 @@
     "pages/index/index",
     "pages/logs/logs",
     "pages/myPersonalDetails/myPersonalDetails",
-    "pages/MainInterface/MainInterface"
+    "pages/MainInterface/MainInterface",
+    "pages/VoiceCall/VoiceCall"
   ],
   "window": {
     "navigationBarTextStyle": "black",
@@ -16,14 +17,14 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
-        {
-            "text": "互动",
-            "pagePath": "pages/MainInterface/MainInterface"
-        },
-        {
-            "text": "个人详情",
-            "pagePath": "pages/myPersonalDetails/myPersonalDetails"
-        }
+      {
+        "text": "互动",
+        "pagePath": "pages/MainInterface/MainInterface"
+      },
+      {
+        "text": "个人详情",
+        "pagePath": "pages/myPersonalDetails/myPersonalDetails"
+      }
     ]
   },
   "style": "v2",

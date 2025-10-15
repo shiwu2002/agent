@@ -1,720 +1,302 @@
-// pages/VoiceCall/VoiceCall.js
-const VoiceWebSocketManager = require('../../utils/voiceWebsocket.js');
+// 初始化录音管理器（小程序核心录音API）
+const recorderManager = wx.getRecorderManager();
+// 初始化Socket（小程序Socket实例）
+let socketTask = null;
 
 Page({
-  /**
-   * 页面的初始数据
-   */
   data: {
-    targetUser: {
-      id: '',
-      name: '对方',
-      avatar: '/pages/images/用户头像.png'
-    },
-    callStatus: '正在连接...',
-    connectionStatus: '连接中',
-    callDuration: 0,
-    isConnected: false,
-    isRecording: false,
-    isMuted: false,
-    isSpeakerOn: true,
-    voiceWsManager: null,
-    callTimer: null,
-    audioContext: null,
-    recorderManager: null,
-    audioBuffer: []
+    isConnected: false,       // WebSocket连接状态
+    isListening: false,       // 录音/识别状态
+    recognitionResult: '',    // 实时识别结果
+    finalResults: [],         // 识别历史
+    statusMessage: '未连接',  // 状态提示
+    hasRecordAuth: false      // 录音授权状态
   },
 
-  /**
-   * 生命周期函数--监听页面加载
-   */
-  onLoad(options) {
-    console.log('VoiceCall onLoad options:', options);
-    
-    // 获取通话参数
-    if (options.targetUserId) {
-      this.setData({
-        'targetUser.id': options.targetUserId,
-        'targetUser.name': options.targetUserName || '对方'
-      });
-    }
-    
-    // 初始化音频上下文
-    this.initAudioContext();
-    
-    // 初始化录音管理器
-    this.initRecorderManager();
-    
-    // 初始化WebSocket连接
-    this.initVoiceWebSocket();
+  onLoad() {
+    // 页面加载时检查录音授权+初始化录音监听
+    this.checkRecordAuth();
+    this.initRecorderListener();
   },
 
-  /**
-   * 生命周期函数--监听页面显示
-   */
-  onShow() {
-    // 页面显示时的操作
-  },
-
-  /**
-   * 生命周期函数--监听页面隐藏
-   */
-  onHide() {
-    // 页面隐藏时停止录音
-    if (this.data.isRecording) {
-      this.stopRecording();
-    }
-  },
-
-  /**
-   * 生命周期函数--监听页面卸载
-   */
   onUnload() {
-    // 页面卸载时发送关闭确认消息
-    if (this.data.voiceWsManager && this.data.voiceWsManager.isConnected()) {
-      this.data.voiceWsManager.sendControlCommand('close_websocket');
-    }
-    
-    // 清除心跳定时器
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-    
-    // 页面卸载时清理资源
-    this.cleanup();
+    // 页面卸载：关闭Socket+停止录音
+    this.disconnectWebSocket();
+    this.stopAudioCapture();
   },
 
-  /**
-   * 初始化音频上下文
-   */
-  initAudioContext() {
-    try {
-      const innerAudioContext = wx.createInnerAudioContext();
-      innerAudioContext.obeyMuteSwitch = false; // 不遵循静音开关
-      
-      innerAudioContext.onPlay(() => {
-        console.log('音频开始播放');
-      });
-      
-      innerAudioContext.onStop(() => {
-        console.log('音频停止播放');
-      });
-      
-      innerAudioContext.onEnded(() => {
-        console.log('音频播放结束');
-      });
-      
-      innerAudioContext.onError((res) => {
-        console.error('音频播放错误:', res.errMsg);
-      });
-      
-      this.setData({
-        audioContext: innerAudioContext
-      });
-    } catch (error) {
-      console.error('初始化音频上下文失败:', error);
-    }
-  },
-
-  /**
-   * 初始化录音管理器
-   */
-  initRecorderManager() {
-    try {
-      const recorderManager = wx.getRecorderManager();
-      
-      recorderManager.onStart(() => {
-        console.log('录音开始');
-        this.setData({
-          isRecording: true
-        });
-      });
-      
-      recorderManager.onStop((res) => {
-        console.log('录音停止', res);
-        this.setData({
-          isRecording: false
-        });
-      });
-      
-      recorderManager.onFrameRecorded((res) => {
-        // 实时获取录音分片数据
-        const { frameBuffer } = res;
-        console.log('录音分片数据长度:', frameBuffer.byteLength);
-        
-        // 如果没有静音，发送音频数据
-        if (!this.data.isMuted && this.data.voiceWsManager && this.data.voiceWsManager.isConnected()) {
-          this.data.voiceWsManager.sendAudioData(frameBuffer);
+  // 1. 检查录音授权（小程序必须手动处理）
+  checkRecordAuth() {
+    wx.getSetting({
+      success: (res) => {
+        if (res.authSetting['scope.record']) {
+          this.setData({ hasRecordAuth: true });
+        } else {
+          // 无授权：请求授权
+          wx.authorize({
+            scope: 'scope.record',
+            success: () => {
+              this.setData({ hasRecordAuth: true });
+            },
+            fail: () => {
+              this.setData({ statusMessage: '需开启录音授权' });
+              // 引导用户去设置页开启授权
+              wx.showModal({
+                title: '授权提示',
+                content: '请在设置中开启录音权限，否则无法使用语音识别',
+                success: (modalRes) => {
+                  if (modalRes.confirm) {
+                    wx.openSetting();
+                  }
+                }
+              });
+            }
+          });
         }
-      });
-      
-      recorderManager.onError((res) => {
-        console.error('录音错误:', res);
-        this.setData({
-          isRecording: false
-        });
-        wx.showToast({
-          title: '录音失败',
-          icon: 'none'
-        });
-      });
-      
-      this.setData({
-        recorderManager: recorderManager
-      });
-    } catch (error) {
-      console.error('初始化录音管理器失败:', error);
-    }
-  },
-
-  /**
-   * 初始化语音WebSocket连接
-   */
-  initVoiceWebSocket() {
-    try {
-      // 获取全局认证信息
-      const app = getApp();
-      const globalData = app.globalData || {};
-      const userId = globalData.userId || 'default_user';
-      const aiSessionId = globalData.aiSessionId || 'default_session';
-      
-      // 构建WebSocket URL
-      const url = `ws://localhost:8080/ws/voice?userId=${userId}&aiSessionId=${aiSessionId}`;
-      
-      const voiceWsManager = new VoiceWebSocketManager({
-        url: url,
-        onOpen: this.onVoiceWebSocketOpen.bind(this),
-        onMessage: this.onVoiceWebSocketMessage.bind(this),
-        onAudioData: this.onVoiceWebSocketAudioData.bind(this),
-        onClose: this.onVoiceWebSocketClose.bind(this),
-        onError: this.onVoiceWebSocketError.bind(this),
-        reconnectInterval: 3000,
-        maxReconnectAttempts: 5
-      });
-      
-      this.setData({
-        voiceWsManager: voiceWsManager
-      });
-      
-      voiceWsManager.connect();
-      
-      // 发送连接确认消息，告诉后端启动对应的WebSocket服务
-      setTimeout(() => {
-        if (voiceWsManager.isConnected()) {
-          voiceWsManager.sendControlCommand('open_websocket');
-        }
-      }, 100);
-
-      // 启动心跳定时器
-      this.startHeartbeat();
-    } catch (error) {
-      console.error('初始化语音WebSocket失败:', error);
-      this.setData({
-        callStatus: '连接失败',
-        connectionStatus: '已断开'
-      });
-    }
-  },
-
-  /**
-   * WebSocket连接成功
-   */
-  onVoiceWebSocketOpen() {
-    console.log('语音WebSocket连接成功');
-    this.setData({
-      isConnected: true,
-      callStatus: '通话中',
-      connectionStatus: '已连接'
-    });
-    
-    // 发送开始识别命令
-    this.data.voiceWsManager.sendControlCommand('start_recognition');
-    
-    // 启动通话计时器
-    this.startCallTimer();
-    
-    // 自动开始录音
-    this.startRecording();
-  },
-
-  /**
-   * 收到WebSocket文本消息
-   */
-  onVoiceWebSocketMessage(event) {
-    console.log('收到语音WebSocket消息:', event.data);
-    
-    try {
-      const data = JSON.parse(event.data);
-      
-      // 根据消息类型处理
-      switch (data.type) {
-        case 'PING':
-          // 回复PONG
-          this.data.voiceWsManager.sendPong();
-          break;
-        case 'PONG':
-          // 心跳响应，无需特殊处理
-          console.log('收到心跳响应');
-          break;
-        case 'CONTROL':
-          this.handleControlMessage(data.content);
-          break;
-        case 'AUDIO':
-          // 音频文本消息，作为控制消息处理
-          this.handleControlMessage(data.content);
-          break;
-        case 'ERROR':
-          // 错误消息处理
-          this.handleErrorMessage(data.content);
-          break;
-        case 'TEXT':
-          // 文本消息处理
-          this.handleTextMessage(data.content);
-          break;
-        default:
-          console.log('未知消息类型:', data.type);
       }
-    } catch (e) {
-      console.log('解析消息失败:', e);
+    });
+  },
+
+  // 2. 初始化录音监听器（获取PCM帧数据）
+  initRecorderListener() {
+    recorderManager.onFrameRecorded((res) => {
+      const uint8Arr = new Uint8Array(res.frameBuffer);
+      // 过滤静音数据
+      const isSilence = uint8Arr.every(byte => byte === 0);
+      if (isSilence) {
+        console.log('跳过静音数据');
+        return;
+      }
+      // 非静音数据才发送
+      if (uint8Arr.length > 0) {
+        console.log('发送PCM数据大小:', uint8Arr.length);
+        this.sendBinaryData(res.frameBuffer);
+      }
+    });
+  
+    recorderManager.onError((err) => {
+      this.setData({ statusMessage: `录音错误: ${err.errMsg}` });
+      this.stopAudioCapture();
+    });
+  },
+
+  // 3. WebSocket连接（替换浏览器WebSocket）
+  connectWebSocket() {
+    if (this.data.isConnected) return;
+
+    // 1. 确定Socket地址（同Vue逻辑：开发/生产环境区分）
+    let wsUrl;
+    const env = __wxConfig.envVersion; // 小程序环境（develop/production）
+    if (env === 'develop') {
+      // 开发环境：需开启"不校验合法域名"（微信开发者工具→详情）
+      const protocol = wx.getSystemInfoSync().platform === 'ios' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//127.0.0.1:8080/ws/voice`;
+    }
+
+    // 2. 创建Socket连接
+    socketTask = wx.connectSocket({
+      url: wsUrl,
+      header: { 'content-type': 'application/json' },
+      method: 'GET',
+      success: () => {
+        console.log('Socket连接中...', wsUrl);
+      },
+      fail: (err) => {
+        this.setData({ statusMessage: 'Socket连接失败' });
+        console.error('Socket连接失败:', err);
+      }
+    });
+
+    // 3. 监听Socket事件
+    socketTask.onOpen(() => {
+      this.setData({ isConnected: true, statusMessage: '已连接' });
+      console.log('Socket连接成功');
+    });
+
+    socketTask.onMessage((res) => {
+      try {
+        if (typeof res.data === 'string') {
+          const message = JSON.parse(res.data);
+          console.log('收到后端消息:', message); // 新增日志
+          this.handleMessage(message);
+        } else {
+          console.log('收到二进制数据（非识别结果）:', res.data);
+        }
+      } catch (err) {
+        console.error('后端消息解析失败:', err.message, '原始消息:', res.data);
+        this.setData({ statusMessage: '解析结果失败，请重试' });
+      }
+    });
+
+    socketTask.onClose(() => {
+      this.setData({ isConnected: false, isListening: false, statusMessage: '连接已断开' });
+      console.log('Socket连接关闭');
+    });
+
+    socketTask.onError((err) => {
+      this.setData({ statusMessage: `Socket错误: ${err.errMsg}` });
+      console.error('Socket错误:', err);
+    });
+  },
+
+  // 4. 处理后端消息（同Vue逻辑）
+  handleMessage(message) {
+    switch (message.type) {
+      case 'CONTROL':
+        this.handleControlMessage(message.content);
+        break;
+      case 'TEXT':
+        this.handleTextMessage(message.content);
+        break;
+      case 'ERROR':
+        this.setData({ statusMessage: `错误: ${message.content}` });
+        break;
+      default:
+        console.log('未知消息类型:', message.type);
     }
   },
 
-  /**
-   * 收到WebSocket音频数据
-   */
-  onVoiceWebSocketAudioData(data) {
-    console.log('收到音频数据，长度:', data.byteLength);
-    // 将音频数据添加到缓冲区
-    this.appendToAudioBuffer(data);
-  },
-
-  /**
-   * WebSocket连接关闭
-   */
-  onVoiceWebSocketClose() {
-    console.log('语音WebSocket连接关闭');
-    this.setData({
-      isConnected: false,
-      callStatus: '连接已断开',
-      connectionStatus: '已断开'
-    });
-  },
-
-  /**
-   * WebSocket错误
-   */
-  onVoiceWebSocketError(error) {
-    console.error('语音WebSocket错误:', error);
-    this.setData({
-      isConnected: false,
-      callStatus: '连接错误',
-      connectionStatus: '已断开'
-    });
-  },
-
-  /**
-   * 处理控制消息
-   */
   handleControlMessage(content) {
-    if (content === 'connected') {
-      this.setData({
-        callStatus: '通话中',
-        connectionStatus: '已连接'
-      });
-    } else if (content.startsWith('partial:')) {
-      const partialText = content.substring(8);
-      this.setData({
-        callStatus: `识别中: ${partialText}`
-      });
-    } else if (content.startsWith('final:')) {
-      const finalText = content.substring(6);
-      this.setData({
-        callStatus: finalText || '通话中'
-      });
-    } else if (content.startsWith('error:')) {
-      const error = content.substring(6);
-      console.error('语音识别错误:', error);
-      this.setData({
-        callStatus: '识别错误'
-      });
-    } else {
-      this.setData({
-        callStatus: content
-      });
+    switch (content) {
+      case 'connected':
+        this.setData({ statusMessage: '语音服务已就绪' });
+        break;
+      case 'recognition_started':
+        this.setData({ isListening: true, statusMessage: '正在识别...' });
+        this.startAudioCapture(); // 开始录音
+        break;
+      case 'recording_stopped':
+      case 'recognition_completed':
+        this.setData({ isListening: false, statusMessage: '识别完成' });
+        this.stopAudioCapture(); // 停止录音
+        break;
+      case 'interrupted':
+        this.setData({ isListening: false, statusMessage: '已打断' });
+        this.stopAudioCapture();
+        break;
     }
   },
 
-  /**
-   * 处理文本消息
-   */
   handleTextMessage(content) {
-    console.log('收到文本消息:', content);
-    // 文本消息处理逻辑可以在这里添加
+    if (content.startsWith('final:')) {
+      // 最终结果：添加到历史
+      const text = content.substring(6);
+      const finalResults = [...this.data.finalResults, text];
+      this.setData({ recognitionResult: text, finalResults });
+    } else if (content.startsWith('partial:')) {
+      // 中间结果：实时更新
+      const text = content.substring(8);
+      this.setData({ recognitionResult: text });
+    }
   },
 
-  /**
-   * 处理错误消息
-   */
-  handleErrorMessage(content) {
-    console.error('WebSocket错误:', content);
-    this.setData({
-      callStatus: `错误: ${content}`,
-      connectionStatus: '连接错误'
+  // 5. 发送消息（文本/二进制）
+  sendMessage(message) {
+    if (!this.data.isConnected || !socketTask) {
+      this.setData({ statusMessage: '未连接到服务器' });
+      return;
+    }
+    socketTask.send({
+      data: JSON.stringify(message),
+      fail: (err) => {
+        console.error('发送消息失败:', err);
+      }
     });
+  },
+
+  convertToLittleEndian(int16Array) {
+    const buffer = new ArrayBuffer(int16Array.byteLength);
+    const view = new DataView(buffer);
+    for (let i = 0; i < int16Array.length; i++) {
+      view.setInt16(i * 2, int16Array[i], true); // 第三个参数true表示小端序
+    }
+    return buffer;
+  },
+  
+
+  sendBinaryData(data) {
+    if (!this.data.isConnected || !socketTask) return;
     
-    // 显示错误提示
-    wx.showToast({
-      title: '连接错误',
-      icon: 'none'
+    // 将小程序的Int16数据转为小端序（与Vue对齐）
+    const int16Arr = new Int16Array(data);
+    const littleEndianBuffer = this.convertToLittleEndian(int16Arr);
+    
+    socketTask.send({
+      data: littleEndianBuffer, // 发送转换后的小端序数据
+      fail: (err) => {
+        console.error('二进制发送失败：', err.errMsg);
+        this.setData({ statusMessage: `发送失败: ${err.errMsg}` });
+      }
     });
   },
 
-  /**
-   * 开始录音
-   */
+  // 6. 录音控制（替换Web Audio）
+  startAudioCapture() {
+    if (!this.data.hasRecordAuth) {
+      this.setData({ statusMessage: '需开启录音授权' });
+      return;
+    }
+  
+    this.stopAudioCapture();
+  
+    // 修复后的录音参数
+    const options = {
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      format: 'pcm',
+      bitDepth: 16,
+      frameSize: 1,         // 1KB/帧（关键修复）
+      duration: 60000
+    };
+  
+    recorderManager.start(options);
+    this.setData({ statusMessage: '正在录音...' });
+  },
+
+  stopAudioCapture() {
+    recorderManager.stop(); // 停止录音
+  },
+
+  // 7. 业务控制（开始/停止/打断录音）
   startRecording() {
-    if (!this.data.recorderManager) {
-      console.warn('录音管理器未初始化');
-      return;
-    }
-    
     if (!this.data.isConnected) {
-      wx.showToast({
-        title: '未连接到服务器',
-        icon: 'none'
-      });
+      this.setData({ statusMessage: '请先连接服务器' });
       return;
     }
-    
-    try {
-      // 开始录音
-      this.data.recorderManager.start({
-        duration: 60000, // 最长1分钟
-        sampleRate: 16000, // 16kHz采样率
-        numberOfChannels: 1, // 单声道
-        encodeBitRate: 96000, // 比特率
-        format: 'pcm', // PCM格式
-        frameSize: 2048 // 帧大小
-      });
-      
-      this.setData({
-        isRecording: true
-      });
-    } catch (error) {
-      console.error('开始录音失败:', error);
-      wx.showToast({
-        title: '录音启动失败',
-        icon: 'none'
-      });
-    }
+    // 发送"开始识别"命令给后端
+    this.sendMessage({ type: 'CONTROL', content: 'start_recognition' });
   },
 
-  /**
-   * 停止录音
-   */
   stopRecording() {
-    if (!this.data.recorderManager) {
-      console.warn('录音管理器未初始化');
+    if (!this.data.isConnected) {
+      this.setData({ statusMessage: '请先连接服务器' });
       return;
     }
-    
-    if (this.data.isRecording) {
-      this.data.recorderManager.stop();
-      this.setData({
-        isRecording: false
-      });
-    }
+    // 发送"停止识别"命令给后端
+    this.sendMessage({ type: 'CONTROL', content: 'stop_recording' });
   },
 
-  /**
-   * 切换静音状态
-   */
-  toggleMute() {
-    const newMuted = !this.data.isMuted;
-    this.setData({
-      isMuted: newMuted
-    });
-    
-    wx.showToast({
-      title: newMuted ? '已静音' : '已取消静音',
-      icon: 'none'
-    });
-  },
-
-  /**
-   * 切换免提状态
-   */
-  toggleSpeaker() {
-    const newSpeakerOn = !this.data.isSpeakerOn;
-    this.setData({
-      isSpeakerOn: newSpeakerOn
-    });
-    
-    // 在微信小程序中，免提设置可能需要通过系统API实现
-    // 这里只是一个状态切换的示例
-    wx.showToast({
-      title: newSpeakerOn ? '免提已开启' : '免提已关闭',
-      icon: 'none'
-    });
-  },
-
-  /**
-   * 挂断通话
-   */
-  hangupCall() {
-    wx.showModal({
-      title: '挂断通话',
-      content: '确定要挂断通话吗？',
-      success: (res) => {
-        if (res.confirm) {
-          this.cleanup();
-          wx.navigateBack();
-        }
-      }
-    });
-  },
-
-  /**
-   * 启动通话计时器
-   */
-  startCallTimer() {
-    if (this.data.callTimer) {
-      clearInterval(this.data.callTimer);
-    }
-    
-    const timer = setInterval(() => {
-      this.setData({
-        callDuration: this.data.callDuration + 1
-      });
-    }, 1000);
-    
-    this.setData({
-      callTimer: timer
-    });
-  },
-
-  /**
-   * 启动心跳定时器
-   */
-  startHeartbeat() {
-    // 清除现有的心跳定时器
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-    }
-    
-    // 每30秒发送一次PING心跳消息
-    this.heartbeatTimer = setInterval(() => {
-      if (this.data.voiceWsManager && this.data.voiceWsManager.isConnected()) {
-        this.data.voiceWsManager.sendPing();
-      }
-    }, 30000);
-  },
-
-  /**
-   * 将音频数据添加到缓冲区
-   */
-  appendToAudioBuffer(data) {
-    // 初始化音频缓冲区
-    if (!this.data.audioBuffer) {
-      this.setData({
-        audioBuffer: []
-      });
-    }
-    
-    // 将新的音频数据添加到缓冲区
-    const newBuffer = [...this.data.audioBuffer, data];
-    this.setData({
-      audioBuffer: newBuffer
-    });
-    
-    // 如果缓冲区中有足够的数据，开始播放
-    if (newBuffer.length >= 5) { // 例如，积累5个数据块后开始播放
-      this.playAudioFromBuffer();
-    }
-  },
-
-  /**
-   * 从缓冲区播放音频
-   */
-  playAudioFromBuffer() {
-    if (!this.data.audioContext || this.data.audioBuffer.length === 0) {
+  interruptRecognition() {
+    if (!this.data.isConnected) {
+      this.setData({ statusMessage: '请先连接服务器' });
       return;
     }
-    
-    // 合并缓冲区中的所有音频数据
-    const mergedBuffer = this.mergeAudioBuffers();
-    
-    // 清空缓冲区
-    this.setData({
-      audioBuffer: []
-    });
-    
-    // 在微信小程序中播放PCM音频数据需要特殊处理
-    // 这里简化处理，实际应用中可能需要转换为WAV格式
-    try {
-      // 创建临时文件路径
-      const fs = wx.getFileSystemManager();
-      const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_audio.pcm`;
-      
-      // 将音频数据写入临时文件
-      fs.writeFile({
-        filePath: tempFilePath,
-        data: mergedBuffer,
-        success: () => {
-          console.log('音频数据已写入临时文件');
-          // 播放音频文件
-          this.playAudioFile(tempFilePath);
-        },
-        fail: (error) => {
-          console.error('写入音频文件失败:', error);
-        }
-      });
-    } catch (error) {
-      console.error('播放音频失败:', error);
-    }
+    this.stopAudioCapture();
+    this.sendMessage({ type: 'CONTROL', content: 'interrupt' });
+    this.setData({ recognitionResult: '' });
   },
 
-  /**
-   * 合并音频缓冲区
-   */
-  mergeAudioBuffers() {
-    // 合并所有音频数据块
-    const totalLength = this.data.audioBuffer.reduce((acc, buffer) => acc + buffer.byteLength, 0);
-    const mergedBuffer = new Uint8Array(totalLength);
-    
-    let offset = 0;
-    for (const buffer of this.data.audioBuffer) {
-      mergedBuffer.set(new Uint8Array(buffer), offset);
-      offset += buffer.byteLength;
-    }
-    
-    return mergedBuffer.buffer;
+  // 8. 辅助功能（清空历史/断开连接）
+  clearResults() {
+    this.setData({ finalResults: [], recognitionResult: '' });
   },
 
-  /**
-   * 播放音频文件
-   */
-  playAudioFile(filePath) {
-    if (!this.data.audioContext) {
-      console.warn('音频上下文未初始化');
-      return;
+  disconnectWebSocket() {
+    this.stopAudioCapture();
+    if (socketTask) {
+      socketTask.close({ code: 1000, reason: '主动断开' });
+      socketTask = null;
     }
-    
-    try {
-      this.data.audioContext.src = filePath;
-      this.data.audioContext.play();
-    } catch (error) {
-      console.error('播放音频文件失败:', error);
-    }
-  },
-
-  /**
-   * 切换静音状态
-   */
-  toggleMute() {
-    const newMuted = !this.data.isMuted;
-    this.setData({
-      isMuted: newMuted
-    });
-    
-    wx.showToast({
-      title: newMuted ? '已静音' : '已取消静音',
-      icon: 'none'
-    });
-  },
-
-  /**
-   * 切换免提状态
-   */
-  toggleSpeaker() {
-    const newSpeakerOn = !this.data.isSpeakerOn;
-    this.setData({
-      isSpeakerOn: newSpeakerOn
-    });
-    
-    // 在微信小程序中，免提设置可能需要通过系统API实现
-    // 这里只是一个状态切换的示例
-    wx.showToast({
-      title: newSpeakerOn ? '免提已开启' : '免提已关闭',
-      icon: 'none'
-    });
-  },
-
-  /**
-   * 挂断通话
-   */
-  hangupCall() {
-    wx.showModal({
-      title: '挂断通话',
-      content: '确定要挂断通话吗？',
-      success: (res) => {
-        if (res.confirm) {
-          this.cleanup();
-          wx.navigateBack();
-        }
-      }
-    });
-  },
-
-  /**
-   * 生命周期函数--监听页面卸载
-   */
-  onUnload() {
-    // 页面卸载时发送关闭确认消息
-    if (this.data.voiceWsManager && this.data.voiceWsManager.isConnected()) {
-      this.data.voiceWsManager.sendControlCommand('close_websocket');
-    }
-    
-    // 页面卸载时清理资源
-    this.cleanup();
-  },
-
-  /**
-   * 清理资源
-   */
-  cleanup() {
-    // 停止录音
-    if (this.data.isRecording) {
-      this.stopRecording();
-    }
-    
-    // 停止通话计时器
-    if (this.data.callTimer) {
-      clearInterval(this.data.callTimer);
-      this.setData({
-        callTimer: null
-      });
-    }
-    
-    // 清除心跳定时器
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-    
-    // 断开WebSocket连接
-    if (this.data.voiceWsManager) {
-      this.data.voiceWsManager.disconnect();
-    }
-    
-    // 停止音频播放
-    if (this.data.audioContext) {
-      this.data.audioContext.stop();
-    }
-    
-    // 清空音频缓冲区
-    this.setData({
-      audioBuffer: []
-    });
-  },
-
-  /**
-   * 格式化时间
-   */
-  formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    this.setData({ isConnected: false, isListening: false, statusMessage: '未连接' });
   }
 });

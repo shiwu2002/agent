@@ -1,54 +1,68 @@
-<!--pages/VoiceCall/VoiceCall.wxml-->
-<view class="container">
-  <!-- 通话状态显示 -->
-  <view class="status-section">
-    <image class="avatar" src="{{targetUser.avatar}}" mode="aspectFill"></image>
-    <text class="user-name">{{targetUser.name}}</text>
-    <text class="status-text">{{callStatus}}</text>
-  </view>
-
-  <!-- 通话时间显示 -->
-  <view class="timer-section" wx:if="{{isConnected}}">
-    <text class="timer">{{formatTime(callDuration)}}</text>
+<view class="voice-interface">
+  <view class="status-bar">
+    <!-- 连接状态指示器 -->
+    <view class="status-indicator {{isConnected ? 'connected' : 'disconnected'}}"></view>
+    <view class="status-text">{{statusMessage}}</view>
+    <button 
+      bindtap="connectWebSocket" 
+      disabled="{{isConnected}}" 
+      class="connect-btn"
+    >
+      连接
+    </button>
+    <button 
+      bindtap="disconnectWebSocket" 
+      disabled="{{!isConnected}}" 
+      class="disconnect-btn"
+    >
+      断开
+    </button>
   </view>
 
   <!-- 控制按钮 -->
-  <view class="controls-section">
-    <!-- 静音按钮 -->
-    <view class="control-btn" bindtap="toggleMute">
-      <view class="btn-icon {{isMuted ? 'muted' : ''}}">
-        <text class="iconfont">{{isMuted ? '🔇' : '麦克风'}}</text>
-      </view>
-      <text class="btn-label">{{isMuted ? '取消静音' : '静音'}}</text>
-    </view>
-
-    <!-- 挂断按钮 -->
-    <view class="control-btn hangup-btn" bindtap="hangupCall">
-      <view class="btn-icon hangup">
-        <text class="iconfont">挂断</text>
-      </view>
-      <text class="btn-label">挂断</text>
-    </view>
-
-    <!-- 免提按钮 -->
-    <view class="control-btn" bindtap="toggleSpeaker">
-      <view class="btn-icon {{isSpeakerOn ? 'speaker-on' : ''}}">
-        <text class="iconfont">{{isSpeakerOn ? '🔊' : '🔈'}}</text>
-      </view>
-      <text class="btn-label">{{isSpeakerOn ? '免提开' : '免提关'}}</text>
-    </view>
+  <view class="control-buttons">
+    <button 
+      bindtap="startRecording" 
+      disabled="{{!isConnected || isListening}}"
+      class="record-btn {{isListening ? 'active' : ''}}"
+    >
+      {{isListening ? '识别中...' : '开始录音'}}
+    </button>
+    <button 
+      bindtap="stopRecording" 
+      disabled="{{!isConnected || !isListening}}"
+      class="stop-btn"
+    >
+      停止录音
+    </button>
+    <button 
+      bindtap="interruptRecognition" 
+      disabled="{{!isConnected}}"
+      class="interrupt-btn"
+    >
+      打断
+    </button>
   </view>
 
-  <!-- 录音按钮 -->
-  <view class="record-section">
-    <view class="record-btn {{isRecording ? 'recording' : ''}}" bindtouchstart="startRecording" bindtouchend="stopRecording" bindtouchcancel="stopRecording">
-      <text class="record-text">{{isRecording ? '松开结束' : '按住说话'}}</text>
-    </view>
+  <!-- 实时识别结果 -->
+  <view class="recognition-result">
+    <view class="section-title">实时识别结果</view>
+    <view class="result-box">{{recognitionResult}}</view>
   </view>
 
-  <!-- 网络状态 -->
-  <view class="network-status">
-    <text class="status-indicator {{connectionStatus === '已连接' ? 'connected' : 'disconnected'}}"></text>
-    <text class="status-text">{{connectionStatus}}</text>
+  <!-- 识别历史 -->
+  <view class="final-results">
+    <view class="results-header">
+      <view class="section-title">识别历史</view>
+      <button bindtap="clearResults" class="clear-btn">清空</button>
+    </view>
+    <view class="results-list">
+      <view class="result-item" wx:for="{{finalResults}}" wx:key="index">
+        {{item}}
+      </view>
+      <view class="no-results" wx:if="{{finalResults.length === 0}}">
+        暂无识别结果
+      </view>
+    </view>
   </view>
 </view>

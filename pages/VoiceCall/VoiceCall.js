@@ -153,8 +153,18 @@ Page({
       const deviceInfo = wx.getDeviceInfo();
       // 开发环境使用ws而非wss
       const protocol = deviceInfo.platform === 'ios' ? 'ws:' : 'ws:';
+      // 确保后端服务正在运行在正确的端口上
       wsUrl = `${protocol}//192.168.1.3:8080/ws/voice`;
-    } 
+    } else {
+      // 生产环境配置
+      const deviceInfo = wx.getDeviceInfo();
+      // 生产环境使用wss
+      const protocol = deviceInfo.platform === 'ios' ? 'wss:' : 'wss:';
+      // 根据实际情况修改生产环境地址
+      wsUrl = `${protocol}//yourdomain.com/ws/voice`;
+    }
+
+    console.log('尝试连接WebSocket地址:', wsUrl);
 
     // 2. 创建Socket连接
     voiceSocket = new VoiceWebSocketManager({
@@ -266,8 +276,22 @@ Page({
       return;
     }
     
+    // 检查数据类型并进行适当处理
+    let bufferToSend;
+    if (data instanceof ArrayBuffer) {
+      bufferToSend = data;
+    } else if (data.buffer instanceof ArrayBuffer) {
+      // 如果是TypedArray，提取其buffer
+      bufferToSend = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    } else {
+      console.log('未知的数据类型，无法发送');
+      return;
+    }
+    
+    console.log('准备发送音频数据，大小:', bufferToSend.byteLength);
+    
     // 直接发送数据，使用改进的sendAudioData方法
-    const result = voiceSocket.sendAudioData(data);
+    const result = voiceSocket.sendAudioData(bufferToSend);
     if (!result) {
       console.log('音频数据发送失败');
       this.setData({ statusMessage: '音频数据发送失败' });
@@ -286,10 +310,17 @@ Page({
   
     // 使用标准的微信小程序录音参数
     const options = {
+      // 最长录音时长，确保不会很快自动结束（单位 ms）
+      duration: 600000,
+      // 采样配置
       sampleRate: 16000,
       numberOfChannels: 1,
+      // 编码比特率（对 pcm 会被忽略，但保留无碍）
       encodeBitRate: 96000,
-      format: 'pcm'
+      // 使用原始 PCM，便于后端实时识别
+      format: 'pcm',
+      // 关键参数：分片大小（KB）。设置后 onFrameRecorded 将按分片持续回调
+      frameSize: 5
     };
   
     console.log('开始录音，参数:', options);

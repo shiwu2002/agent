@@ -108,7 +108,7 @@ App({
     userInfo: null,
     token: null,
     openId: null,
-    URL: 'https://localhost:8080',
+    URL: 'https://192.168.1.3:8080',
     aiSessionId : null
   }
 })

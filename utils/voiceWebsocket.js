@@ -3,7 +3,7 @@
 
 class VoiceWebSocketManager {
   constructor(options = {}) {
-    this.url = options.url || 'ws://localhost:8080/ws/voice';
+    this.url = options.url || 'ws://192.168.1.3:8080/ws/voice';
     this.onOpen = options.onOpen || (() => {});
     this.onMessage = options.onMessage || (() => {});
     this.onClose = options.onClose || (() => {});
@@ -171,7 +171,35 @@ class VoiceWebSocketManager {
    * @param {ArrayBuffer} audioData 音频数据
    */
   sendAudioData(audioData) {
-    return this.send(audioData);
+    if (!this.connected) {
+      console.warn('语音WebSocket未连接，无法发送音频数据');
+      return false;
+    }
+    
+    try {
+      // 确保数据是ArrayBuffer格式
+      let buffer;
+      if (audioData instanceof ArrayBuffer) {
+        buffer = audioData;
+      } else {
+        // 如果是Uint8Array或其他类型，需要转换
+        buffer = audioData.buffer.slice(audioData.byteOffset, audioData.byteOffset + audioData.byteLength);
+      }
+      
+      this.socket.send({
+        data: buffer,
+        success: () => {
+          console.log('音频数据发送成功，大小:', buffer.byteLength);
+        },
+        fail: (err) => {
+          console.error('音频数据发送失败:', err);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('发送音频数据失败:', error);
+      return false;
+    }
   }
 
   /**

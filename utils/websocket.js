@@ -3,7 +3,7 @@
 
 class WebSocketManager {
   constructor(options = {}) {
-    this.url = options.url || 'ws://localhost:8080/ws/chat';
+    this.url = options.url || 'ws://192.168.1.3:8080/ws/chat';
     this.onOpen = options.onOpen || (() => {});
     this.onMessage = options.onMessage || (() => {});
     this.onClose = options.onClose || (() => {});

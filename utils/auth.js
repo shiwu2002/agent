@@ -1,10 +1,10 @@
 // utils/auth.js
 // 微信小程序登录认证服务模块
-
+// 创建并导出authService实例
 class AuthService {
   constructor() {
     this.config = {
-      apiUrl: 'http://localhost:8080/wx/login',
+      apiUrl: 'http://192.168.1.3:8080/wx/login',
       timeout: 5000,
       maxRetries: 3,
       retryDelay: 1000
@@ -54,6 +54,10 @@ class AuthService {
 
   getWxLoginCode() {
     return new Promise((resolve, reject) => {
+      if (!wx || typeof wx.login !== 'function') {
+        reject(new Error('当前环境不支持微信登录API'));
+        return;
+      }
       wx.login({
         success: (res) => {
           if (res.code) {
@@ -100,7 +104,8 @@ class AuthService {
           if (res.statusCode === 200 && res.data && res.data.code === 200 && res.data.data && res.data.data.token) {
             resolve(res.data.data.token)
           } else {
-            reject(new Error(res.data?.msg || '服务器错误'))
+            const errMsg = (res.data && res.data.msg) ? res.data.msg : '服务器错误';
+            reject(new Error(errMsg));
           }
         },
         fail: (error) => {
@@ -179,8 +184,15 @@ class AuthService {
   }
 
   storeUserInfo(token, openId, aiSessionId) {
+    const app = getApp(); 
     try {
-      const app = getApp()
+    // 增加app存在性判断
+    if (!app) {
+      console.warn('未找到App实例，无法存储用户信息');
+      return;
+    }
+    app.globalData = app.globalData || {}; // 确保globalData存在
+    app.globalData.token = token;
       if (app && app.globalData) {
         app.globalData.token = token
         app.globalData.openId = openId
@@ -193,8 +205,8 @@ class AuthService {
   }
 
   getUserInfo() {
+    const app = getApp();
     try {
-      const app = getApp()
       if (app && app.globalData && app.globalData.token && app.globalData.openId) {
         return {
           token: app.globalData.token,
@@ -223,7 +235,6 @@ class AuthService {
 
   logout() {
     try {
-      const app = getApp()
       if (app && app.globalData) {
         app.globalData.token = null
         app.globalData.openId = null

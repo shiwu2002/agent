@@ -4,9 +4,12 @@ const recorderManager = wx.getRecorderManager();
 const VoiceWebSocketManager = require('../../utils/voiceWebsocket.js');
 // 初始化Socket实例
 let voiceSocket = null;
-// 定时发送录音数据的定时器
-let sendTimer = null;
-// 存储录音数据的缓冲区
+// 移除定时发送录音数据的定时器（不再使用）
+// let sendTimer = null;
+// 存储录音数据的缓冲区（不再使用）
+// let audioBuffer = [];
+
+// 重新定义audioBuffer为局部变量，避免全局污染
 let audioBuffer = [];
 
 Page({
@@ -30,10 +33,13 @@ Page({
     this.disconnectWebSocket();
     this.stopAudioCapture();
     // 清理定时器
-    if (sendTimer) {
-      clearInterval(sendTimer);
-      sendTimer = null;
-    }
+    // if (sendTimer) {
+    //   clearInterval(sendTimer);
+    //   sendTimer = null;
+    // }
+    
+    // 清理缓冲区
+    audioBuffer = [];
   },
 
   // 1. 检查录音授权（小程序必须手动处理）
@@ -79,7 +85,8 @@ Page({
         console.log('跳过静音数据');
         return;
       }
-      // 非静音数据才发送
+      
+      // 直接发送非静音数据，确保后端能及时接收到音频数据
       if (uint8Arr.length > 0 && this.data.isListening) {
         console.log('发送PCM数据大小:', uint8Arr.length);
         this.sendBinaryData(res.frameBuffer);
@@ -87,11 +94,11 @@ Page({
         console.log('数据未发送，大小:', uint8Arr.length, '监听状态:', this.data.isListening);
       }
       
-      // 同时将数据添加到缓冲区，供定时发送使用
-      if (this.data.isListening) {
-        audioBuffer.push(res.frameBuffer);
-        console.log('数据已添加到缓冲区，当前缓冲区大小:', audioBuffer.length);
-      }
+      // 不再将数据添加到缓冲区，避免重复发送
+      // if (this.data.isListening) {
+      //   audioBuffer.push(res.frameBuffer);
+      //   console.log('数据已添加到缓冲区，当前缓冲区大小:', audioBuffer.length);
+      // }
     });
   
     recorderManager.onStart(() => {
@@ -101,35 +108,35 @@ Page({
       // 清空缓冲区
       audioBuffer = [];
       
-      // 启动定时发送数据（作为onFrameRecorded的备选方案）
-      if (sendTimer) {
-        clearInterval(sendTimer);
-      }
-      sendTimer = setInterval(() => {
-        if (this.data.isListening && audioBuffer.length > 0) {
-          console.log('定时发送数据，缓冲区大小:', audioBuffer.length);
-          // 合并缓冲区数据
-          const totalLength = audioBuffer.reduce((acc, buf) => acc + buf.byteLength, 0);
-          const mergedBuffer = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const buf of audioBuffer) {
-            mergedBuffer.set(new Uint8Array(buf), offset);
-            offset += buf.byteLength;
-          }
-          this.sendBinaryData(mergedBuffer.buffer);
-          audioBuffer = []; // 清空缓冲区
-        }
-      }, 100); // 每100ms发送一次
+      // 移除定时发送数据逻辑，改用实时发送
+      // if (sendTimer) {
+      //   clearInterval(sendTimer);
+      // }
+      // sendTimer = setInterval(() => {
+      //   if (this.data.isListening && audioBuffer.length > 0) {
+      //     console.log('定时发送数据，缓冲区大小:', audioBuffer.length);
+      //     // 合并缓冲区数据
+      //     const totalLength = audioBuffer.reduce((acc, buf) => acc + buf.byteLength, 0);
+      //     const mergedBuffer = new Uint8Array(totalLength);
+      //     let offset = 0;
+      //     for (const buf of audioBuffer) {
+      //       mergedBuffer.set(new Uint8Array(buf), offset);
+      //       offset += buf.byteLength;
+      //     }
+      //     this.sendBinaryData(mergedBuffer.buffer);
+      //     audioBuffer = []; // 清空缓冲区
+      //   }
+      // }, 100); // 每100ms发送一次
     });
     
     recorderManager.onStop(() => {
       console.log('录音停止');
       this.setData({ isListening: false });
       // 停止定时发送
-      if (sendTimer) {
-        clearInterval(sendTimer);
-        sendTimer = null;
-      }
+      // if (sendTimer) {
+      //   clearInterval(sendTimer);
+      //   sendTimer = null;
+      // }
       audioBuffer = []; // 清空缓冲区
     });
   
@@ -319,7 +326,7 @@ Page({
       encodeBitRate: 96000,
       // 使用原始 PCM，便于后端实时识别
       format: 'pcm',
-      // 关键参数：分片大小（KB）。设置后 onFrameRecorded 将按分片持续回调
+      // 恢复frameSize参数以确保onFrameRecorded回调正常触发
       frameSize: 5
     };
   
@@ -332,6 +339,12 @@ Page({
     recorderManager.stop(); // 停止录音
     // 清理缓冲区
     audioBuffer = [];
+    
+    // 清理定时器
+    // if (sendTimer) {
+    //   clearInterval(sendTimer);
+    //   sendTimer = null;
+    // }
   },
 
   // 7. 业务控制（开始/停止/打断录音）
@@ -377,5 +390,14 @@ Page({
       voiceSocket = null;
     }
     this.setData({ isConnected: false, isListening: false, statusMessage: '未连接' });
+    
+    // 清理定时器
+    // if (sendTimer) {
+    //   clearInterval(sendTimer);
+    //   sendTimer = null;
+    // }
+    
+    // 清理缓冲区
+    audioBuffer = [];
   }
 });

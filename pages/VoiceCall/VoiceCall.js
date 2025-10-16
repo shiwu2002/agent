@@ -2,33 +2,46 @@
 const recorderManager = wx.getRecorderManager();
 // 引入语音WebSocket管理器
 const VoiceWebSocketManager = require('../../utils/voiceWebsocket.js');
+/**
+ * 实时语音通话页面
+ * 支持：实时录音、WebSocket音频流收发、TTS音频流播放
+ */
+
 // 初始化Socket实例
 let voiceSocket = null;
 // 定时发送录音数据的定时器
 let sendTimer = null;
 // 存储录音数据的缓冲区
 let audioBuffer = [];
+// 音频播放实例
+let audioPlayer = null;
 
 Page({
   data: {
     isConnected: false,       // WebSocket连接状态
-    isListening: false,       // 录音/识别状态
-    recognitionResult: '',    // 实时识别结果
-    finalResults: [],         // 识别历史
+    isListening: false,       // 录音/通话状态
     statusMessage: '未连接',  // 状态提示
-    hasRecordAuth: false      // 录音授权状态
+    hasRecordAuth: false,     // 录音授权状态
+    isPlaying: false          // 是否正在播放TTS音频
   },
 
   onLoad() {
     // 页面加载时检查录音授权+初始化录音监听
     this.checkRecordAuth();
     this.initRecorderListener();
+    this.initAudioPlayer();
   },
 
   onUnload() {
     // 页面卸载：关闭Socket+停止录音
     this.disconnectWebSocket();
     this.stopAudioCapture();
+    // 停止音频播放
+    if (audioPlayer) {
+      audioPlayer.stop();
+      audioPlayer.destroy && audioPlayer.destroy();
+      audioPlayer = null;
+    }
     // 清理定时器
     if (sendTimer) {
       clearInterval(sendTimer);
@@ -179,13 +192,15 @@ Page({
             const message = JSON.parse(res.data);
             console.log('收到后端消息:', message);
             this.handleMessage(message);
-          } else {
-            console.log('收到二进制数据（非识别结果）:', res.data);
           }
         } catch (err) {
           console.error('后端消息解析失败:', err.message, '原始消息:', res.data);
           this.setData({ statusMessage: '解析结果失败，请重试' });
         }
+      },
+      onAudioData: (audioBuffer) => {
+        // 收到TTS音频流，直接播放
+        this.playPcmAudio(audioBuffer);
       },
       onClose: () => {
         this.setData({ isConnected: false, isListening: false, statusMessage: '连接已断开' });
@@ -200,19 +215,17 @@ Page({
     voiceSocket.connect();
   },
 
-  // 4. 处理后端消息（同Vue逻辑）
+  // 4. 处理后端消息（仅处理控制/错误，忽略TEXT）
   handleMessage(message) {
     switch (message.type) {
       case 'CONTROL':
         this.handleControlMessage(message.content);
         break;
-      case 'TEXT':
-        this.handleTextMessage(message.content);
-        break;
       case 'ERROR':
         this.setData({ statusMessage: `错误: ${message.content}` });
         break;
       default:
+        // 忽略TEXT等类型
         console.log('未知消息类型:', message.type);
     }
   },
@@ -222,32 +235,21 @@ Page({
       case 'connected':
         this.setData({ statusMessage: '语音服务已就绪' });
         break;
+      case 'start_recording':
       case 'recognition_started':
-        this.setData({ isListening: true, statusMessage: '正在识别...' });
+        this.setData({ isListening: true, statusMessage: '正在通话...' });
         this.startAudioCapture(); // 开始录音
         break;
+      case 'stop_recording':
       case 'recording_stopped':
       case 'recognition_completed':
-        this.setData({ isListening: false, statusMessage: '识别完成' });
+        this.setData({ isListening: false, statusMessage: '通话结束' });
         this.stopAudioCapture(); // 停止录音
         break;
       case 'interrupted':
         this.setData({ isListening: false, statusMessage: '已打断' });
         this.stopAudioCapture();
         break;
-    }
-  },
-
-  handleTextMessage(content) {
-    if (content.startsWith('final:')) {
-      // 最终结果：添加到历史
-      const text = content.substring(6);
-      const finalResults = [...this.data.finalResults, text];
-      this.setData({ recognitionResult: text, finalResults });
-    } else if (content.startsWith('partial:')) {
-      // 中间结果：实时更新
-      const text = content.substring(8);
-      this.setData({ recognitionResult: text });
     }
   },
 
@@ -300,29 +302,22 @@ Page({
     }
   },
 
-  // 6. 录音控制（替换Web Audio）
+  // 6. 录音控制
   startAudioCapture() {
     console.log('准备开始录音，授权状态:', this.data.hasRecordAuth);
     if (!this.data.hasRecordAuth) {
       this.setData({ statusMessage: '需开启录音授权' });
       return;
     }
-  
     // 使用标准的微信小程序录音参数
     const options = {
-      // 最长录音时长，确保不会很快自动结束（单位 ms）
       duration: 600000,
-      // 采样配置
       sampleRate: 16000,
       numberOfChannels: 1,
-      // 编码比特率（对 pcm 会被忽略，但保留无碍）
       encodeBitRate: 96000,
-      // 使用原始 PCM，便于后端实时识别
       format: 'pcm',
-      // 关键参数：分片大小（KB）。设置后 onFrameRecorded 将按分片持续回调
       frameSize: 5
     };
-  
     console.log('开始录音，参数:', options);
     recorderManager.start(options);
   },
@@ -340,9 +335,9 @@ Page({
       this.setData({ statusMessage: '请先连接服务器' });
       return;
     }
-    // 发送"开始识别"命令给后端
-    console.log('发送开始识别命令');
-    this.sendMessage({ type: 'CONTROL', content: 'start_recognition' });
+    // 发送"开始录音"命令给后端
+    console.log('发送开始录音命令');
+    this.sendMessage({ type: 'CONTROL', content: 'start_recording' });
   },
 
   stopRecording() {
@@ -350,8 +345,8 @@ Page({
       this.setData({ statusMessage: '请先连接服务器' });
       return;
     }
-    // 发送"停止识别"命令给后端
-    console.log('发送停止识别命令');
+    // 发送"停止录音"命令给后端
+    console.log('发送停止录音命令');
     this.sendMessage({ type: 'CONTROL', content: 'stop_recording' });
   },
 
@@ -362,20 +357,114 @@ Page({
     }
     this.stopAudioCapture();
     this.sendMessage({ type: 'CONTROL', content: 'interrupt' });
-    this.setData({ recognitionResult: '' });
   },
 
-  // 8. 辅助功能（清空历史/断开连接）
-  clearResults() {
-    this.setData({ finalResults: [], recognitionResult: '' });
+  // 8. 音频播放相关
+  initAudioPlayer() {
+    if (audioPlayer) {
+      audioPlayer.destroy && audioPlayer.destroy();
+      audioPlayer = null;
+    }
+    audioPlayer = wx.createInnerAudioContext();
+    audioPlayer.obeyMuteSwitch = false;
+    audioPlayer.onPlay(() => {
+      this.setData({ isPlaying: true, statusMessage: '正在播放AI语音...' });
+    });
+    audioPlayer.onEnded(() => {
+      this.setData({ isPlaying: false, statusMessage: '播放结束' });
+    });
+    audioPlayer.onError((err) => {
+      this.setData({ isPlaying: false, statusMessage: '播放出错' });
+      console.error('音频播放错误:', err);
+    });
   },
 
+  /**
+   * 播放PCM音频流（需转为WAV临时文件）
+   * @param {ArrayBuffer} pcmBuffer
+   */
+  playPcmAudio(pcmBuffer) {
+    // 1. PCM转WAV
+    const wavBuffer = this.pcmToWav(pcmBuffer, {
+      sampleRate: 16000,
+      numChannels: 1,
+      bitDepth: 16
+    });
+    // 2. 写入本地临时文件
+    const fs = wx.getFileSystemManager();
+    const filePath = `${wx.env.USER_DATA_PATH}/tts_play_${Date.now()}.wav`;
+    try {
+      fs.writeFileSync(filePath, wavBuffer, 'binary');
+      // 3. 播放
+      if (!audioPlayer) this.initAudioPlayer();
+      audioPlayer.src = filePath;
+      audioPlayer.play();
+      this.setData({ isPlaying: true, statusMessage: '正在播放AI语音...' });
+    } catch (e) {
+      this.setData({ statusMessage: '音频播放失败' });
+      console.error('写入WAV文件失败:', e);
+    }
+  },
+
+  /**
+   * PCM转WAV格式
+   * @param {ArrayBuffer} pcmBuffer
+   * @param {Object} options
+   * @returns {ArrayBuffer}
+   */
+  pcmToWav(pcmBuffer, options) {
+    // 参考WAV文件头格式
+    const numChannels = options.numChannels || 1;
+    const sampleRate = options.sampleRate || 16000;
+    const bitDepth = options.bitDepth || 16;
+    const bytesPerSample = bitDepth / 8;
+    const pcmData = new Uint8Array(pcmBuffer);
+    const dataLength = pcmData.length;
+    const wavHeader = new ArrayBuffer(44);
+    const view = new DataView(wavHeader);
+
+    // "RIFF" chunk descriptor
+    this.writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true); // 文件总长度-8
+    this.writeString(view, 8, 'WAVE');
+    // "fmt " sub-chunk
+    this.writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // 子块大小
+    view.setUint16(20, 1, true); // 音频格式 1=PCM
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); // 字节率
+    view.setUint16(32, numChannels * bytesPerSample, true); // 块对齐
+    view.setUint16(34, bitDepth, true);
+    // "data" sub-chunk
+    this.writeString(view, 36, 'data');
+    view.setUint32(40, dataLength, true);
+
+    // 合并头部和PCM数据
+    const wavBuffer = new Uint8Array(44 + dataLength);
+    wavBuffer.set(new Uint8Array(wavHeader), 0);
+    wavBuffer.set(pcmData, 44);
+    return wavBuffer.buffer;
+  },
+
+  writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  },
+
+  // 9. 辅助功能（断开连接）
   disconnectWebSocket() {
     this.stopAudioCapture();
     if (voiceSocket) {
       voiceSocket.disconnect();
       voiceSocket = null;
     }
-    this.setData({ isConnected: false, isListening: false, statusMessage: '未连接' });
+    if (audioPlayer) {
+      audioPlayer.stop();
+      audioPlayer.destroy && audioPlayer.destroy();
+      audioPlayer = null;
+    }
+    this.setData({ isConnected: false, isListening: false, isPlaying: false, statusMessage: '未连接' });
   }
 });

@@ -1,6 +1,6 @@
 <view class="voice-interface">
+  <!-- 状态栏：连接状态、通话/播放状态、错误提示 -->
   <view class="status-bar">
-    <!-- 连接状态指示器 -->
     <view class="status-indicator {{isConnected ? 'connected' : 'disconnected'}}"></view>
     <view class="status-text">{{statusMessage}}</view>
     <button 
@@ -19,21 +19,21 @@
     </button>
   </view>
 
-  <!-- 控制按钮 -->
+  <!-- 通话控制按钮 -->
   <view class="control-buttons">
     <button 
       bindtap="startRecording" 
       disabled="{{!isConnected || isListening}}"
       class="record-btn {{isListening ? 'active' : ''}}"
     >
-      {{isListening ? '识别中...' : '开始录音'}}
+      {{isListening ? '正在通话...' : '开始通话'}}
     </button>
     <button 
       bindtap="stopRecording" 
       disabled="{{!isConnected || !isListening}}"
       class="stop-btn"
     >
-      停止录音
+      停止通话
     </button>
     <button 
       bindtap="interruptRecognition" 
@@ -44,25 +44,11 @@
     </button>
   </view>
 
-  <!-- 实时识别结果 -->
-  <view class="recognition-result">
-    <view class="section-title">实时识别结果</view>
-    <view class="result-box">{{recognitionResult}}</view>
-  </view>
-
-  <!-- 识别历史 -->
-  <view class="final-results">
-    <view class="results-header">
-      <view class="section-title">识别历史</view>
-      <button bindtap="clearResults" class="clear-btn">清空</button>
-    </view>
-    <view class="results-list">
-      <view class="result-item" wx:for="{{finalResults}}" wx:key="index">
-        {{item}}
-      </view>
-      <view class="no-results" wx:if="{{finalResults.length === 0}}">
-        暂无识别结果
-      </view>
+  <!-- AI语音播放状态 -->
+  <view class="playback-status">
+    <view class="section-title">AI语音回复</view>
+    <view class="play-status-text">
+      {{isPlaying ? '正在播放AI语音...' : '等待AI语音回复'}}
     </view>
   </view>
 </view>

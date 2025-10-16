@@ -4,7 +4,7 @@
 class AuthService {
   constructor() {
     this.config = {
-      apiUrl: 'http://192.168.1.3:8080/wx/login',
+      apiUrl: 'http://10.12.63.20:8080/wx/login',
       timeout: 5000,
       maxRetries: 3,
       retryDelay: 1000

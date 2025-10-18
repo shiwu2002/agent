@@ -153,6 +153,19 @@
   font-size: 28rpx;
 }
 
+/* AI回复状态 */
+.ai-response-status {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  background-color: #e3f2fd;
+  border-radius: 10rpx;
+  border: 2rpx solid #bbdefb;
+}
+.ai-response-status .status-text {
+  font-size: 28rpx;
+  color: #1976d2;
+}
+
 /* 动画 */
 @keyframes pulse {
   0% { transform: scale(1); }

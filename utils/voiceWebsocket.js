@@ -27,12 +27,16 @@ class VoiceWebSocketManager {
     }
 
     try {
+      console.log('尝试建立WebSocket连接:', this.url);
+      
       // 微信小程序中需要使用wx.connectSocket
       this.socket = wx.connectSocket({
         url: this.url,
         header: {
           'content-type': 'application/json'
-        }
+        },
+        // 启用二进制数据接收
+        tcpNoDelay: true
       });
       
       this.socket.onOpen((event) => {
@@ -43,11 +47,15 @@ class VoiceWebSocketManager {
       });
 
       this.socket.onMessage((event) => {
+        console.log('收到WebSocket消息，数据类型:', typeof event.data, '是否为ArrayBuffer:', event.data instanceof ArrayBuffer);
+        
         // 处理二进制音频数据
         if (event.data instanceof ArrayBuffer) {
+          console.log('收到二进制音频数据，大小:', event.data.byteLength);
           this.onAudioData(event.data);
         } else {
           // 处理文本消息
+          console.log('收到文本消息:', event.data);
           this.onMessage(event);
         }
       });
@@ -92,13 +100,16 @@ class VoiceWebSocketManager {
 
     try {
       if (typeof data === 'string') {
+        console.log('发送文本消息:', data);
         this.socket.send({ data: data });
       } else if (data instanceof ArrayBuffer) {
         // 发送二进制数据
+        console.log('发送二进制数据，大小:', data.byteLength);
         this.socket.send({ data: data });
       } else {
         // 发送JSON对象
         const message = JSON.stringify(data);
+        console.log('发送JSON消息:', message);
         this.socket.send({ data: message });
       }
       return true;
@@ -186,6 +197,8 @@ class VoiceWebSocketManager {
         buffer = audioData.buffer.slice(audioData.byteOffset, audioData.byteOffset + audioData.byteLength);
       }
       
+      console.log('准备发送音频数据，大小:', buffer.byteLength);
+      
       this.socket.send({
         data: buffer,
         success: () => {
@@ -207,6 +220,7 @@ class VoiceWebSocketManager {
    */
   disconnect() {
     if (this.socket) {
+      console.log('断开WebSocket连接');
       this.socket.close();
       this.socket = null;
     }

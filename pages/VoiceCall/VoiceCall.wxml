@@ -65,4 +65,10 @@
       </view>
     </view>
   </view>
+  
+  <!-- AI回复播放状态 -->
+  <view class="ai-response-status" wx:if="{{isConnected}}">
+    <view class="section-title">AI语音回复</view>
+    <view class="status-text">正在播放AI回复...</view>
+  </view>
 </view>
